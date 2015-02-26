@@ -1,0 +1,35 @@
+the paper says that CPS is merely a detail and CFA2 can be applied to ANF and direct style without much trouble. Earl's Scheme workshop paper used an ANF treatment as a selling point. Is it actually more difficult or was Earl reaching? Ian Johnson wrote a CFA2 analysis for direct style.
+a variable is a stack variable if all its references are stack references and a heap variable otherwise. what if it was stored in both places so that stack references would get perfect precision where they exist?
+maybe stack references are unnecessary with garbage collection because if the binding lifetime is bounded above by the context lifetime, when the context is called, garbage collection can collect the binding.
+
+CFA2 keeping track of context where tail calls aren't subsumed
+in WebPPL, treat a storified, named, CPS'd program special: the names should be treated as if they are syntactic annotations and the store should be treated according to its behavioral discipline.
+
+Matt Might used binding times to distinguish bindings of the same identifier. He has a binding environment β : X -> T (variables to times) and a global value environment (a store) ve : (X,T) -> V. This seems clever for a few reasons. Imagine instead the ``more straightforward'' approach of having a flat address space in the store. Then β : X -> A (variables to addresses) and ve : A -> V. In giving up the time structure, one gives up an obvious point of abstraction. This leads to a kind of principle: to abstract a property, reify the essential structure of that property in the machine and then abstract that structure. If the resultant abstraction is inadequate, perhaps it's fair to say that the /essential/ structure wasn't reified in the machine. I'm taking this approach with the stochastic dependence: the concrete machine keeps track of dependencies during execution exactly and the abstraction of this structure determines in part the abstraction of the machine. I find another aspect of Matt's strategy interesting: the variable is reused. This thought isn't fully-formed, but it seems like he is avoiding repetition which gives him something.
+
+I think Dimitris Vardoulakis mischaracterizes Steele's view about argument evaluation. Dimitris says that "[s]ince arguments in CPS are not calls, argument evaluation is trivial and Rabbit never needs to push stack". But the continuation represents the stack, and the continuation is extended when evaluation in CPS corresponds to evaluation of an argument in the orginal program. In both CPS and the original program, calls do not push stack. This misunderstanding is reflected in his assessment of the Orbit compiler also: he says that, by the Orbit approach, tail calls are only the calls where the continuation argument is a variable. I think this is true of all CPS transforms. What is this:
+
+(lambda (x k) ((lambda (y) (k y)) x))
+
+Why are calls and returns places of imprecision where inner nodes of function bodies have perfect precision? If there were multiple entry points to an inner node, it /would/ be a place of imprecision. Conditional statements have more than one exit point, and are places of imprecision. The key to better static analyses is identifying more invariants about the language which disqualify spurious judgements. The stack behavior of the continuation is one example of this.
+
+a variable captured by a lambda may not necessarily escape–that is, it may not necessarily outlive its context, but it is a safe approximation.
+
+just because each concrete state has an abstract state, a concrete execution does not necessarily have a corresponding abstract execution. that's what soundness /is/.
+
+my idea to store all bindings on the stack and heap–and then look them up based on the type of reference–is not novel; Dimitris does this!
+
+suppose we look up a variable to bind and we get an approximate set. we could bind the new variable to that same set, or we could bind it to each value in the set and analyze each path through the program. the second approach would probably be much tighter and would allow us to rule out some flows, but it would probably cost more in analysis than the flows it ruled out. (time-wise: the information from that analysis is useful.)
+
+(+ 1 ans k) is a function return because k is a tail call and + is a primitive?
+
+abstract continuation closures are included in the set of values. I contend that they are not values since they can't be treated in a first-class way. this is recognized somewhat be the comment that continuation bindings are only on the stack.
+
+in the regular and context-free languages, the alphabet consists of control states.
+
+"executions with no function returns" instead of "executions where functions do not return"
+
+according to the local semantics, a lambda /can/ be in operator position in a continuation call!
+
+"add flows that do not happen in the abstract [sic] semantics"? should it read "concrete"?
+

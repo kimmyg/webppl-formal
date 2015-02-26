@@ -1,0 +1,28 @@
+;; continuation monad
+;; newtype M a = (a -> r) -> r
+;; return :: a -> M a
+;; return x k = k x
+;; bind :: M a -> (a -> M b) -> M b = ((a -> r) -> r) -> (a -> (b -> r) -> r) -> (b -> r) -> r
+;; bind m f k = m λx.((f x) k)
+
+;; laws
+;; bind m return = m
+;; bind m return = λk0.(m λx.((return x) k0))
+;;               = λk0.(m λx.(k0 x))
+;;               = λk0.(m k0)
+;;               = m
+
+;; bind (return x) f = f x
+;; bind (return x) f = λk.((return x) λx.((f x) k))
+;;                   = λk.(λk0.(k0 x) λx.((f x) k))
+;;                   = λk.(λx.((f x) k) x)
+;;                   = λk.((f x) k)
+;;                   = f x
+
+;; bind (bind m f) g = bind m λx.(bind (f x) g)
+;; bind (bind m f) g = bind λk0.(m λx.((f x) k0)) g
+;;                   = λk1.(λk0.(m λx.((f x) k0)) λy.((g y) k1))
+;;                   = λk1.(m λx.((f x) λy.((g y) k1)))
+;;                   = λk1.(m λx.(λk2.((f x) λy.((g y) k2)) k1))
+;;                   = λk1.(m λx.((bind (f x) g) k1))
+;;                   = bind m λx.(bind (f x) g)
