@@ -5,8 +5,8 @@
 
 (struct ς-entr (σ f vs) #:transparent)
 (struct ς-exit (σ v) #:transparent)
-(struct ς-call (σ ρ f es k) #:transparent)
-(struct ς-tail (σ ρ f es) #:transparent)
+(struct ς-call (σ ρ f es k ℓ) #:transparent)
+(struct ς-tail (σ ρ f es ℓ) #:transparent)
 
 (define empty-σ (hasheq))
 
@@ -40,12 +40,12 @@
 
 (define (ς-eval σ ρ e)
   (match e
-    [(uapp f es k)
+    [(uapp f es k ℓ)
      (cond
        [(klam? k)
-	(ς-call σ ρ f es k)]
+	(ς-call σ ρ f es k ℓ)]
        [(kref? k)
-	(ς-tail σ ρ f es)]
+	(ς-tail σ ρ f es ℓ)]
        [else
 	(error 'ς-eval "unexpected k: ~a" k)])]
     [(kapp k e)
@@ -63,8 +63,8 @@
        (let ([σ (σ-update* xs vs σ)]
 	     [ρ (ρ-update* xs vs ρ)])
 	 (list (ς-eval σ ρ e))))]
-    [(or (ς-call σ ρ f es _)
-	 (ς-tail σ ρ f es))
+    [(or (ς-call σ ρ f es _ _)
+	 (ς-tail σ ρ f es _))
      (let ([vs (map (λ (e) (A e ρ σ)) es)])
        (for/list ([f (in-set (A f ρ σ))])
 	 (ς-entr σ f vs)))]))
@@ -80,7 +80,7 @@
     (foldl (λ (ς1 work) (propagate seen work ς0 ς1)) work ς1s))
 
   (define (update seen work ς0 ς1 ς2 ς3)
-    (match-let ([(ς-call σ1 ρ1 f1 es1 (klam x e)) ς1]
+    (match-let ([(ς-call σ1 ρ1 f1 es1 (klam x e) ℓ1) ς1]
 		[(ς-entr σ2 f2 vs2) ς2]
 		[(ς-exit σ3 v3) ς3])
       (let ([σ σ3]
