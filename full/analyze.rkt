@@ -32,6 +32,8 @@
     (match e
       [(num n)
        (set n)]
+      [(href x)
+       (hash-ref σ x)]
       [(sref x)
        (hash-ref ρ x)])))
 
@@ -43,9 +45,9 @@
     [(uapp f es k ℓ)
      (cond
        [(klam? k)
-	(ς-call σ ρ f es k ℓ)]
+	(list (ς-call σ ρ f es k ℓ))]
        [(kref? k)
-	(ς-tail σ ρ f es ℓ)]
+	(list (ς-tail σ ρ f es ℓ))]
        [else
 	(error 'ς-eval "unexpected k: ~a" k)])]
     [(kapp k e)
@@ -54,20 +56,36 @@
 	 [(klam x e)
 	  (ς-eval σ (ρ-update x v ρ) e)]
 	 [(kref k)
-	  (ς-exit σ v)]))]))
+	  (list (ς-exit σ v))]))]
+    [(if0 t c a)
+     (let ([v (A t ρ σ)])
+       (let* ([ςs null]
+	      [ςs (if (or (set-member? v 0) (set-member? v 'num)) (append (ς-eval σ ρ c) ςs) ςs)]
+	      [ςs (if (or (set-member? v 1) (set-member? v 'num)) (append (ς-eval σ ρ a) ςs) ςs)])
+	 ςs))]))
 
 (define succs
   (match-lambda
+    [(ς-entr σ 'flip (list))
+     (list (ς-exit σ (set 'num)))]
+    [(ς-entr σ 'add1 (list v))
+     (list (ς-exit σ (set 'num)))]
     [(ς-entr σ (ulam xs k e) vs)
      (let ([ρ empty-ρ])
        (let ([σ (σ-update* xs vs σ)]
 	     [ρ (ρ-update* xs vs ρ)])
-	 (list (ς-eval σ ρ e))))]
+	 (ς-eval σ ρ e)))]
     [(or (ς-call σ ρ f es _ _)
 	 (ς-tail σ ρ f es _))
      (let ([vs (map (λ (e) (A e ρ σ)) es)])
-       (for/list ([f (in-set (A f ρ σ))])
-	 (ς-entr σ f vs)))]))
+       (match f
+	 [(href 'add1)
+	  (list (ς-entr σ 'add1 vs))]
+	 [(href 'flip)
+	  (list (ς-entr σ 'flip vs))]
+	 [_
+	  (for/list ([f (in-set (A f ρ σ))])
+	    (ς-entr σ f vs))]))]))
 
 (define (analyze p)
   (define (propagate seen work ς0 ς1)
@@ -83,9 +101,9 @@
 		[(ς-exit σ3 v3) ς3])
       (let ([σ σ3]
 	    [ρ ρ1])
-	(let* ([ρ (if (href? f1) (ρ-update (ref-x f1) (set f2) ρ) ρ)]
+	(let* ([ρ (if (href? f1) (ρ-update (hvar (ref-x f1)) (set f2) ρ) ρ)]
 	       [ρ (ρ-update x v3 ρ)])
-	  (propagate seen work ς0 (ς-eval σ ρ e))))))
+	  (propagate* seen work ς0 (ς-eval σ ρ e))))))
   
   (define (call seen work calls summaries ς0×ς1 ς2s f)
     (for/fold ([work work]
@@ -142,10 +160,28 @@
 	     [else
 	      (error 'analyze "unrecognized state ~a" ς1)]))]))))
 
-(define p (CPS (P ((λ (x) ((λ (y) y) x)) ((λ () ((λ () 5))))) )))
+#;(define p (CPS (P ((λ (x) ((λ (y) (f y)) x)) ((λ () ((λ () 35))))))))
 
-(module+ main
-  (analyze p))
+(define p (CPS (P ((λ (Y)
+		     ((λ (geom)	(geom))
+		      (Y (λ (geom) (λ () (if0 (flip) 0 (add1 (geom))))))))
+		   (λ (f) ((λ (g0) (g0 g0))
+			   (λ (f0) (λ () ((f (f0 f0)))))))))))
+
+(let-values ([(calls tails summaries finals) (analyze p)])
+  (displayln (map ς-exit-v (set->list finals)))
+  #;
+  (define consumption-point
+  (car
+  (filter
+  (λ (ς) (eq? (ς-entr-f ς) 'const))
+  (hash-keys summaries))))
+  #;(displayln consumption-point)
+  #;
+  (match-let ([(cons entr tail) (set-first (hash-ref tails consumption-point))])
+  (values entr tail)) )
+
+
 
 #;
 (module+ main
