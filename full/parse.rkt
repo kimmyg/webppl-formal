@@ -86,7 +86,8 @@
       [(cons e es)
        (atomize e (λ (e) (atomize* es (λ (es) (K (cons e es))))))]))
   (define (CPS e k)
-    (if (ref? e)
+    (if (or (num? e)
+	    (ref? e))
       (kapp k e)
       (match e
 	[(app f es ℓ)
