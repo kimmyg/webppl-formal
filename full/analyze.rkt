@@ -70,8 +70,6 @@
 	 (ς-entr σ f vs)))]))
 
 (define (analyze p)
-  (displayln (unP p))
-  
   (define (propagate seen work ς0 ς1)
     (let ([ς0×ς1 (cons ς0 ς1)])
       (if (set-member? seen ς0×ς1) work	(set-add work ς0×ς1))))
@@ -89,13 +87,18 @@
 	       [ρ (ρ-update x v3 ρ)])
 	  (propagate seen work ς0 (ς-eval σ ρ e))))))
   
-  (define (call seen work calls ς0×ς1 ς2s)
+  (define (call seen work calls summaries ς0×ς1 ς2s f)
     (for/fold ([work work]
 	       [calls calls])
 	([ς2 (in-list ς2s)])
-      (let ([work (propagate seen work ς2 ς2)]
-	    [calls (hash-update calls ς2 (λ (cs) (set-add cs ς0×ς1)) (set))])
-	(values work calls))))
+      (if (hash-has-key? summaries ς2)
+	(values (for/fold ([work work])
+		    ([ς3 (in-set (hash-ref summaries ς2))])
+		  (f work ς2 ς3))
+		calls)
+	(let ([work (propagate seen work ς2 ς2)]
+	      [calls (hash-update calls ς2 (λ (cs) (set-add cs ς0×ς1)) (set))])
+	  (values work calls)))))
   
   (define (retr seen work calls ς0 f)
     (for/fold ([work work])
@@ -120,10 +123,12 @@
 	      (let ([work (propagate* seen work ς0 (succs ς1))])
 		(loop seen work calls tails summaries finals))]
 	     [(ς-call? ς1)
-	      (let-values ([(work calls) (call seen work calls ς0×ς1 (succs ς1))])
+	      (let-values ([(work calls) (call seen work calls summaries ς0×ς1 (succs ς1)
+					       (λ (work ς2 ς3) (update seen work ς0 ς1 ς2 ς3)))])
 		(loop seen work calls tails summaries finals))]
 	     [(ς-tail? ς1)
-	      (let-values ([(work tails) (call seen work tails ς0×ς1 (succs ς1))])
+	      (let-values ([(work tails) (call seen work tails summaries ς0×ς1 (succs ς1)
+					       (λ (work ς2 ς3) (propagate seen work ς0 ς3)))])
 		(loop seen work calls tails summaries finals))]
 	     [(ς-exit? ς1)
 	      (if (equal? ς0 ς-init)
@@ -137,6 +142,12 @@
 	     [else
 	      (error 'analyze "unrecognized state ~a" ς1)]))]))))
 
+(define p (CPS (P ((λ (x) ((λ (y) y) x)) ((λ () ((λ () 5))))) )))
+
+(module+ main
+  (analyze p))
+
+#;
 (module+ main
   (analyze (CPS (P ((λ (x) (x x)) (λ (y) (y y))))))
   (analyze (CPS (P ((λ (x) x) ((λ (y) y) 42))))))
