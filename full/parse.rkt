@@ -10,12 +10,14 @@
 (struct svar var () #:transparent)
 
 (struct exp () #:transparent)
-(struct app exp (f es) #:transparent)
+(struct app exp (f es ℓ) #:transparent)
 (struct lam exp (xs e) #:transparent)
 (struct num exp (n) #:transparent)
 (struct ref exp (x) #:transparent)
 (struct href ref () #:transparent)
 (struct sref ref () #:transparent)
+
+(define (fresh-ℓ) (gensym 'ℓ))
 
 (begin-for-syntax
  (define (in-ρ x ρ)
@@ -38,7 +40,7 @@
 			 (let-values ([(e e-hrefs) (E e ρ)]
 				      [(es es-hrefs) (loop es)])
 			   (values (cons e es) (append e-hrefs es-hrefs)))]))])
-	(values #`(app #,f (list #,@es)) (append f-hrefs es-hrefs)))]
+	(values #`(app #,f (list #,@es) (fresh-ℓ)) (append f-hrefs es-hrefs)))]
      [x
       (identifier? #'x)
       (if (in-ρ #'x ρ)
@@ -58,7 +60,7 @@
 (struct kref sref () #:transparent)
 
 (struct ulam exp (xs k e) #:transparent)
-(struct uapp exp (f es k) #:transparent)
+(struct uapp exp (f es k ℓ) #:transparent)
 
 (struct klam exp (x e) #:transparent)
 (struct kapp exp (k e) #:transparent)
@@ -87,15 +89,15 @@
     (if (ref? e)
       (kapp k e)
       (match e
-	[(app f es)
-	 (atomize f (λ (f) (atomize* es (λ (es) (uapp f es k)))))])))
+	[(app f es ℓ)
+	 (atomize f (λ (f) (atomize* es (λ (es) (uapp f es k ℓ)))))])))
   (let ([k (gensym 'k)])
     (ulam null (kvar k) (CPS p (kref k)))) )
 
 (define unP
   (match-lambda
-    [(app f es)
-     `(,(unP f) ,@(map unP es))]
+    [(app f es ℓ)
+     `(,(unP f) ,@(map unP es) ,ℓ)]
     [(lam xs e)
      `(λ ,(map unP xs) ,(unP e))]
     [(or (hvar x)
@@ -107,8 +109,8 @@
      `(λ (,(unP x)) ,(unP e))]
     [(kapp k e)
      `(,(unP k) ,(unP e))]
-    [(uapp f es k)
-     `(,(unP f) ,@(map unP es) ,(unP k))]
+    [(uapp f es k ℓ)
+     `(,(unP f) ,@(map unP es) ,(unP k) ,ℓ)]
     [(ulam xs k e)
      `(λ (,@(map unP xs) ,(unP k)) ,(unP e))]))
 
