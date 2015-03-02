@@ -128,6 +128,25 @@
   (let ([k (gensym 'k)])
     (ulam null (kvar k) (CPS p (kref k)))) )
 
+(define (unCPS e)
+  e
+  #;
+  (if (or (num? e)
+  (ref? e))
+  e
+  (match e
+  [(uapp f es k ℓ)
+  (match k
+  [(kref k)
+  (app (unCPS f) (map unCPS es) ℓ)]
+  [(klam (svar r) e)])]
+  [(kapp k e)
+  (match k
+  [(kref k)
+  (unCPS e)])]
+  [(ulam xs k e)
+  (lam xs (unCPS e))])))
+
 (define unP
   (match-lambda
     [(app f es ℓ)
