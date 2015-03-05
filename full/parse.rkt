@@ -31,14 +31,15 @@
       (andmap identifier? (syntax->list #'(xs ...)))
       (let-values ([(e hrefs) (E #'e (syntax->list #'(xs ...)))])
 	(values #`(lam (list #,@(map (λ (x) (if (in-ρ x hrefs) #`(hvar '#,x) #`(svar '#,x))) (syntax->list #'(xs ...)))) #,e) hrefs))]
-     #;
-     [(fix x (λ (xs ...) e0) e1)
-     (and (identifier? #'x) (andmap identifier? (syntax->list #'(xs ...))))
-     (let-values ([(e0 e0-hrefs) (E #'e0 (cons #'x (syntax->list #'(xs ...))))]
-     [(e1 e1-hrefs) (E #'e1 (cons #'x ρ))])
-     (values #`(fix #,(if (in-ρ #'x (append e0-hrefs e1-hrefs)) #'(hvar 'x) #'(svar 'x))
-     (lam (list #,@(map (λ (x) (if (in-ρ x hrefs) #`(hvar '#,x) #`(svar '#,x))) (syntax->list #'(xs ...)))) #,e) hrefs)))
-     ]
+     [(fix f (λ (xs ...) e0) e1)
+      (and (identifier? #'f) (andmap identifier? (syntax->list #'(xs ...))))
+      (let-values ([(e0 e0-hrefs) (E #'e0 (cons #'f (syntax->list #'(xs ...))))]
+                   [(e1 e1-hrefs) (E #'e1 (cons #'f ρ))])
+        (let ([hrefs (append e0-hrefs e1-hrefs)])
+          (values #`(fix #,(if (in-ρ #'f hrefs) #'(hvar 'f) #'(svar 'f))
+                         (lam (list #,@(map (λ (x) (if (in-ρ x e0-hrefs) #`(hvar '#,x) #`(svar '#,x))) (syntax->list #'(xs ...)))) #,e0)
+                         #,e1)
+                  hrefs)))]
      [(if0 t c a)
       (let-values ([(t t-hrefs) (E #'t ρ)]
 		   [(c c-hrefs) (E #'c ρ)]
@@ -123,10 +124,12 @@
        (match e
 	[(app f es ℓ)
 	 (atomize f (λ (f) (atomize* es (λ (es) (uapp f es k ℓ)))))]
+        [(fix f (? lam? e0) e1)
+         (fix f )]
 	[(if0 t c a)
 	 (bind k (λ (k) (atomize t (λ (t) (if0 t (CPS c k) (CPS a k))))))])]))
   (let ([k (gensym 'k)])
-    (ulam null (kvar k) (CPS p (kref k)))) )
+    (ulam null (kvar k) (CPS p (kref k)))))
 
 (define (unCPS e)
   e
@@ -174,4 +177,5 @@
   (unP (CPS (P ((λ (x) (x x)) (λ (y) (y y))))))
   (unP (CPS (P (if0 0 5 6))))
   (unP (CPS (P (f (if0 0 5 6)))))
-  (unP (CPS (P (f (if0 (g 42) 5 6))))))
+  (unP (CPS (P (f (if0 (g 42) 5 6)))))
+  (unP (CPS (P (fix f (λ (n) (if0 n 1 (* n (f (- n 1))))) (f 5))))))
