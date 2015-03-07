@@ -120,11 +120,12 @@
 	 [(klam x e)
 	  (ς-eval σ (ρ-update x v ρ) (hash-set Ω x ωv) e (set))]
 	 [(kref k)
-          (let ([U (for/list ([x (in-list xs)])
-                     (hash-ref U (var-x x) (set)))])
+          (let* ([U (if (sref? e) (hash-update U (ref-x e) (add (returned)) (set)) U)]
+                 [U (for/list ([x (in-list xs)])
+                             (hash-ref U (var-x x) (set)))])
             (list (ς-exit σ U v (set-union ω ωv))))]))]
     [(if0 t c a)
-     (let ([U (if (ref? t) (hash-update U (ref-x t) (add (immediate)) (set)) U)]
+     (let ([U (if (sref? t) (hash-update U (ref-x t) (add (immediate)) (set)) U)]
            [v (A t ρ σ)]
            [ωv (D t Ω)])
        (let* ([ςs null]
@@ -259,9 +260,20 @@
 
 (module+ main
   (define (watch summaries)
-    (for ([ςs (in-hash-values summaries)])
-      (for ([ς (in-set ςs)])
-        ((current-print) ς))))
+    (for ([(ς ςs) (in-hash summaries)])
+      (let ([f (ς-entr-f ς)])
+        ((current-print) (if (symbol? f) f (unP f))))
+      ((current-print)
+       (for/fold ([summary (for/list ([v (in-list (ς-entr-vs ς))])
+                             (set))])
+                 ([ς (in-set ςs)])
+         (for/list ([si (in-list summary)]
+                    [ti (in-list (ς-exit-U ς))])
+           (set-union si ti))))
+      ((current-print)
+       (for/fold ([summary (set)])
+                 ([ς (in-set ςs)])
+         (set-union summary (ς-exit-ω ς))))))
   
   #;(analyze (CPS (P ((λ (x) (x x)) (λ (y) (y y))))))
   (displayln "p")
