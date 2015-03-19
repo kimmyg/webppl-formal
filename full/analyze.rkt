@@ -134,9 +134,9 @@
 (define succs
   (match-lambda
     [(ς-entr σ 'betaERP (list v0 v1))
-     (list (ς-exit σ (set 'num) `(NODE ,(parameter 0) ,(parameter 1))))]
+     (list (ς-exit σ (set 'num) `(RAND ,(parameter 0) ,(parameter 1))))]
     [(ς-entr σ 'bernoulliERP (list v))
-     (list (ς-exit σ (set 'num) `(NODE ,(parameter 0))))]
+     (list (ς-exit σ (set 'num) `(RAND ,(parameter 0))))]
     [(ς-entr σ 'not (list v))
      (list (ς-exit σ (set #t #f) `(NODE ,(parameter 0))))]
     [(ς-entr σ 'zero? (list v))
@@ -243,14 +243,8 @@
 				     (λ (work ς2 ς3) (update seen work ς2 ς3 ς0 ς1)))]
 			 [work (retr seen work tails ς0
 				     (λ (work ς2 ς3)
-                                       (match-let ([(ς-exit σ1 v1 ω1) ς1]
-                                                   [(ς-tail σ3 ρ3 Ω3 f3 es3 ℓ3) ς3])
-                                         (let ([ω1 (match ω1
-                                                     [`(NODE ,p0)
-                                                      `(NODE ,(D (list-ref es3 0) Ω3))]
-                                                     [`(NODE ,p0 ,p1)
-                                                      `(NODE ,(D (list-ref es3 0) Ω3) ,(D (list-ref es3 1) Ω3))])])
-                                           (propagate seen work ς2 (ς-exit σ1 v1 ω1))))))])
+                                       (match-let ([(ς-exit σ1 v1 ω1) ς1])
+                                         (propagate seen work ς2 (ς-exit σ1 v1 `(NODE ,(result (ς-tail-ℓ ς3))))))))])
 		    (loop seen work calls tails summaries results finals))))]
 	     [else
 	      (error 'analyze "unrecognized state ~a" ς1)]))]))))
@@ -271,24 +265,37 @@
 
   (define (resolve calls tails summaries results)
     (letrec ([inner0 (λ (ς0 s)
+                       (printf "inner0 ~v\n" s)
+                      (match s
+                        [`(RAND ,v0)
+                         (inner2 ς0 v0)]
+                        [`(RAND ,v0 ,v1)
+                         (cons (inner2 ς0 v0) (inner2 ς0 v1))]))]
+             [inner1 (λ (ς0 s)
+                       (printf "inner1 ~v\n" s)
                       (match s
                         [`(NODE ,v0)
-                         (inner1 ς0 v0)]
+                         (inner2 ς0 v0)]
                         [`(NODE ,v0 ,v1)
-                         (inner1 ς0 v0)]))]
-             [inner1 (λ (ς0 v)
+                         (cons (inner2 ς0 v0) (inner2 ς0 v1))]
+                        [`(RAND ,v0)
+                         '(RANDO)]
+                        [`(RAND ,v0 ,v1)
+                         '((RANDO) . (RANDO))]))]
+             [inner2 (λ (ς0 v)
+                       (printf "inner2 ~v\n" v)
                        (match v
-                           [(parameter 0)
+                           [(parameter n)
                             (if (hash-has-key? calls ς0)
                               (match-let* ([(cons ς0 ς1) (set-first (hash-ref calls ς0))]
                                            [(ς-call σ1 ρ1 Ω1 f1 es1 k1 ℓ1) ς1])
-                                (cons ℓ1 (inner1 ς0 (D (car es1) Ω1))))
+                                (cons ℓ1 (inner2 ς0 (D (car es1) Ω1))))
                               (match-let* ([(cons ς0 ς1) (set-first (hash-ref tails ς0))]
                                            [(ς-tail σ1 ρ1 Ω1 f1 es1 ℓ1) ς1])
-                                (cons ℓ1 (inner1 ς0 (D (car es1) Ω1)))))]
+                                (cons ℓ1 (inner2 ς0 (D (list-ref es1 n) Ω1)))))]
                            [(result ℓ) ; below returns summary entry states
                             (let ([ς0 (set-first (hash-ref (hash-ref results ς0) ℓ))])
-                              (cons `(- ,ℓ) (inner0 ς0 (ς-exit-ω (set-first (hash-ref summaries ς0))))))]
+                              (cons `(- ,ℓ) (inner1 ς0 (ς-exit-ω (set-first (hash-ref summaries ς0))))))]
                            [(immediate e)
                             e]))])
       inner0))
