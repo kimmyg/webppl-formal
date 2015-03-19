@@ -18,6 +18,7 @@
 (struct sref ref () #:transparent)
 (struct fix exp (x λ e) #:transparent)
 (struct if0 exp (t c a) #:transparent)
+(struct sam exp (f θs ℓ) #:transparent)
 
 (define (fresh-ℓ) (gensym 'ℓ))
 
@@ -26,7 +27,7 @@
    (ormap (λ (y) (bound-identifier=? x y)) ρ))
 
  (define (E stx ρ)
-   (syntax-case stx (λ fix if0)
+   (syntax-case stx (λ fix if0 sample)
      [(λ (xs ...) e)
       (andmap identifier? (syntax->list #'(xs ...)))
       (let-values ([(e hrefs) (E #'e (syntax->list #'(xs ...)))])
@@ -45,6 +46,18 @@
 		   [(c c-hrefs) (E #'c ρ)]
 		   [(a a-hrefs) (E #'a ρ)])
 	(values #`(if0 #,t #,c #,a) (append t-hrefs c-hrefs a-hrefs)))]
+     [(sample f θs ...)
+      (let-values ([(f f-hrefs) (E #'f ρ)]
+		   [(θs θs-hrefs)
+		    (let loop ([θs (syntax->list #'(θs ...))])
+		      (match θs
+			[(list)
+			 (values null null)]
+			[(cons θ θs)
+			 (let-values ([(θ θ-hrefs) (E θ ρ)]
+				      [(θs θs-hrefs) (loop θs)])
+			   (values (cons θ θs) (append θ-hrefs θs-hrefs)))]))])
+	(values #`(sam #,f (list #,@θs) (fresh-ℓ)) (append f-hrefs θs-hrefs)))]
      [(f es ...)
       (let-values ([(f f-hrefs) (E #'f ρ)]
 		   [(es es-hrefs)
@@ -81,6 +94,8 @@
 (struct klam exp (x e) #:transparent)
 (struct kapp exp (k e) #:transparent)
 
+(struct usam exp (f θs k ℓ) #:transparent)
+
 (define (CPS p)
   (define (bind k K)
     (cond
@@ -102,6 +117,9 @@
       [(if0? e)
        (let ([t (gensym 't)])
 	 (CPS e (klam (svar t) (K (sref t)))))]
+      [(sam? e)
+       (let ([x (gensym 'x)])
+	 (CPS e (klam (svar x) (K (sref x)))))]
       [else
        (match e
 	 [(lam xs e)
@@ -127,7 +145,9 @@
         [(fix f (? lam? e0) e1)
          (fix f )]
 	[(if0 t c a)
-	 (bind k (λ (k) (atomize t (λ (t) (if0 t (CPS c k) (CPS a k))))))])]))
+	 (bind k (λ (k) (atomize t (λ (t) (if0 t (CPS c k) (CPS a k))))))]
+        [(sam f θs ℓ)
+         (atomize f (λ (f) (atomize* θs (λ (θs) (usam f θs k ℓ)))))])]))
   (let ([k (gensym 'k)])
     (ulam null (kvar k) (CPS p (kref k)))))
 
@@ -154,6 +174,8 @@
   (match-lambda
     [(app f es ℓ)
      `(,(unP f) ,@(map unP es) ,ℓ)]
+    [(sam f θs ℓ)
+     `(sample ,(unP f) ,@(map unP θs) ,ℓ)]
     [(lam xs e)
      `(λ ,(map unP xs) ,(unP e))]
     [(if0 t c a)
