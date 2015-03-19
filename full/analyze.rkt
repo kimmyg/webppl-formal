@@ -14,7 +14,7 @@
 
 ;; sources
 
-(struct immediate () #:transparent)
+(struct immediate (e) #:transparent)
 (struct parameter (n) #:transparent)
 (struct result (ℓ) #:transparent)
 
@@ -45,9 +45,9 @@
 ;; the result is a set of sources which can be parameters or the result of calls
   
 (struct ς-entr (σ f vs) #:transparent)
-(struct ς-exit (σ U v ω) #:transparent)
-(struct ς-call (σ ρ xs U Ω f es ω k ℓ) #:transparent)
-(struct ς-tail (σ ρ xs U Ω f es ω ℓ) #:transparent)
+(struct ς-exit (σ v ω) #:transparent)
+(struct ς-call (σ ρ Ω f es κ ℓ) #:transparent)
+(struct ς-tail (σ ρ Ω f es ℓ) #:transparent)
 
 (define empty-σ (hasheq))
 
@@ -67,6 +67,14 @@
 (define (ρ-update* xs vs ρ)
   (foldl ρ-update ρ xs vs))
 
+(define empty-Ω (hasheq))
+
+(define (Ω-update x ω Ω)
+  (hash-set Ω (var-x x) ω))
+
+(define (Ω-update* xs ωs Ω)
+  (foldl Ω-update Ω xs ωs))
+
 (define (A e ρ σ)
   (if (ulam? e)
     (set e)
@@ -81,7 +89,7 @@
 (define (D e Ω)
   (if (or (ulam? e)
           (num? e))
-    (set (immediate))
+    (immediate e)
     (match e
       [(href x)
        (set 'heap-ref-what-to-do)]
@@ -97,88 +105,58 @@
 (define ((union s1) s0)
   (set-union s0 s1))
 
-(define (ς-eval σ ρ xs U Ω e ω)
+(define (ς-eval σ ρ Ω e)
   (match e
-    [(uapp f es k ℓ)
-     (let ([U (for/fold ([U (if (sref? f) (hash-update U (ref-x f) (add (operator ℓ)) (set)) U)])
-                  ([e (in-list es)]
-                   [i (in-naturals)])
-                 (if (sref? e)
-                   (hash-update U (ref-x e) (add (operand ℓ i)) (set))
-                   U))])
-       (cond
-         [(klam? k)
-          (list (ς-call σ ρ xs U Ω f es ω k ℓ))]
-         [(kref? k)
-          (list (ς-tail σ ρ xs U Ω f es ω ℓ))]
-         [else
-          (error 'ς-eval "unexpected k: ~a" k)]))]
-    [(kapp k e)
+    [(or (uapp f es κ ℓ)
+         (usam f es κ ℓ))
+     (cond
+       [(klam? κ)
+        (list (ς-call σ ρ Ω f es κ ℓ))]
+       [(kref? κ)
+        (list (ς-tail σ ρ Ω f es ℓ))]
+       [else
+        (error 'ς-eval "unexpected κ: ~a" κ)])]
+    [(kapp κ e)
      (let ([v (A e ρ σ)]
            [ωv (D e Ω)])
-       (match k
-	 [(klam x e)
-	  (ς-eval σ (ρ-update x v ρ) (hash-set Ω x ωv) e (set))]
-	 [(kref k)
-          (let* ([U (if (sref? e) (hash-update U (ref-x e) (add (returned)) (set)) U)]
-                 [U (for/list ([x (in-list xs)])
-                             (hash-ref U (var-x x) (set)))])
-            (list (ς-exit σ U v (set-union ω ωv))))]))]
+       (match κ
+         [(klam x e)
+          (ς-eval σ (ρ-update x v ρ) (Ω-update x ωv Ω) e)]
+         [(kref κ)
+          (list (ς-exit σ v 'oops))]))]
     [(if0 t c a)
-     (let ([U (if (sref? t) (hash-update U (ref-x t) (add (immediate)) (set)) U)]
-           [v (A t ρ σ)]
-           [ωv (D t Ω)])
+     (let ([v (A t ρ σ)])
        (let* ([ςs null]
-	      [ςs (if (or (set-member? v 0) (set-member? v 'num)) (append (ς-eval σ ρ xs U Ω c (set-union ω ωv)) ςs) ςs)]
-	      [ςs (if (or (set-member? v 1) (set-member? v 'num)) (append (ς-eval σ ρ xs U Ω a (set-union ω ωv)) ςs) ςs)])
+	      [ςs (if (or (set-member? v 0) (set-member? v 'num)) (append (ς-eval σ ρ Ω c) ςs) ςs)]
+	      [ςs (if (or (set-member? v 1) (set-member? v 'num)) (append (ς-eval σ ρ Ω a) ςs) ςs)])
 	 ςs))]))
 
 (define succs
   (match-lambda
-    [(ς-entr σ 'add1 (list v))
-     (list (ς-exit σ (list (set (immediate))) (set 'num) (set `(Δ ()))))]
-    [(ς-entr σ 'beta (list v0 v1))
-     (list (ς-exit σ (list (set (immediate)) (set (immediate))) (set 'num) (set (immediate))))]
-    [(ς-entr σ 'flip (list v))
-     (list (ς-exit σ (list (set (immediate))) (set 'num) (set (immediate))))]
-    [(ς-entr σ (ulam xs k e) vs)
+    [(ς-entr σ 'betaERP (list v0 v1))
+     (list (ς-exit σ (set 'num) `(NODE ,(parameter 0) ,(parameter 1))))]
+    [(ς-entr σ 'bernoulliERP (list v))
+     (list (ς-exit σ (set 'num) `(NODE ,(parameter 0))))]
+    [(ς-entr σ 'not (list v))
+     (list (ς-exit σ (set #t #f) `(NODE ,(parameter 0))))]
+    [(ς-entr σ 'zero? (list v))
+     (list (ς-exit σ (set #t #f) `(NODE ,(parameter 0))))]
+    [(ς-entr σ (ulam xs κ e) vs)
      (let ([ρ empty-ρ]
-           [Ω (for/hasheq ([x (in-list xs)]
-                           [i (in-naturals)])
-                (values (var-x x) (set (parameter i))))])
+           [Ω empty-Ω])
        (let ([σ (σ-update* xs vs σ)]
-	     [ρ (ρ-update* xs vs ρ)])
-	 (ς-eval σ ρ xs (hasheq) Ω e (set))))]
-    [(or (ς-call σ ρ xs U Ω f es ω _ _)
-	 (ς-tail σ ρ xs U Ω f es ω _))
+	     [ρ (ρ-update* xs vs ρ)]
+             [Ω (Ω-update* xs (build-list (length xs) parameter) Ω)])
+	 (ς-eval σ ρ Ω e)))]
+    [(or (ς-call σ ρ Ω f es _ _)
+	 (ς-tail σ ρ Ω f es _))
      (let ([vs (map (λ (e) (A e ρ σ)) es)])
        (match f
-	 [(href 'add1)
-	  (list (ς-entr σ 'add1 vs))]
-         [(href 'beta)
-          (list (ς-entr σ 'beta vs))]
-	 [(href 'flip)
-	  (list (ς-entr σ 'flip vs))]
-	 [_
+	 [(href (and f (or 'betaERP 'bernoulliERP 'not 'zero?)))
+	  (list (ς-entr σ f vs))]
+	 [f
 	  (for/list ([f (in-set (A f ρ σ))])
 	    (ς-entr σ f vs))]))]))
-
-#;
-(define (resolve* ω es Ω ℓ)
-  (for/set ([d (in-set ω)])
-    (resolve d es Ω ℓ)))
-
-#;
-  (define (resolve d es Ω ℓ)
-    (if (num? d)
-        '(Δ ())
-        (match d
-          [`(param ,n)
-           (resolve (list-ref es n) es Ω ℓ)]
-          [`(Δ ,ℓs)
-           `(Δ ,(cons ℓ ℓs))]
-          [(sref x)
-           (hash-ref Ω x)])))
 
 (define (analyze p)
   (define (propagate seen work ς0 ς1)
@@ -189,19 +167,17 @@
     (foldl (λ (ς1 work) (propagate seen work ς0 ς1)) work ς1s))
 
   (define (update seen work ς0 ς1 ς2 ς3)
-    (match-let ([(ς-call σ1 ρ1 xs1 U1 Ω1 f1 es1 ω1 (klam x e) ℓ1) ς1]
+    (match-let ([(ς-call σ1 ρ1 Ω1 f1 es1 (klam x e) ℓ1) ς1]
 		[(ς-entr σ2 f2 vs2) ς2]
-		[(ς-exit σ3 U3 v3 ω3) ς3])
+		[(ς-exit σ3 v3 ω3) ς3])
       (let ([σ σ3]
 	    [ρ ρ1]
-            [xs xs1]
-            [U U1]
             [Ω Ω1])
         ; fake-rebinding solution
         (let ([ρ (if (href? f1) (ρ-update (hvar (ref-x f1)) (set f2) ρ) ρ)])
           (let ([ρ (ρ-update x v3 ρ)]
-                [Ω (hash-set Ω (var-x x) (set (result ℓ1)))]) ; XXX TODO include the influence of the operator
-            (propagate* seen work ς0 (ς-eval σ ρ xs U Ω e ω1)))))))
+                [Ω (Ω-update x (result ℓ1) Ω)])
+            (propagate* seen work ς0 (ς-eval σ ρ Ω e)))))))
   
   (define (call seen work calls summaries ς0×ς1 ς2s f)
     (for/fold ([work work]
@@ -228,70 +204,105 @@
 	       [calls (hash)]
 	       [tails (hash)]
 	       [summaries (hash)]
+               [results (hash)]
 	       [finals (set)])
       (match work
 	[(list)
-	 (values ς-init seen calls tails summaries finals)]
+	 (values ς-init seen calls tails summaries results finals)]
 	[(cons (and ς0×ς1 (cons ς0 ς1)) work)
 	 (let ([seen (set-add seen ς0×ς1)])
 	   (cond
 	     [(ς-entr? ς1)
 	      (let ([work (propagate* seen work ς0 (succs ς1))])
-		(loop seen work calls tails summaries finals))]
+		(loop seen work calls tails summaries results finals))]
 	     [(ς-call? ς1)
-	      (let-values ([(work calls) (call seen work calls summaries ς0×ς1 (succs ς1)
-					       (λ (work ς2 ς3) (update seen work ς0 ς1 ς2 ς3)))])
-		(loop seen work calls tails summaries finals))]
+              (let ([ς2s (succs ς1)])
+                (let-values ([(results) (foldl (λ (ς2 results)
+                                                 (hash-update results ς0
+                                                              (λ (->) (hash-update -> (ς-call-ℓ ς1) (add ς2) (set)))
+                                                              (hasheq)))
+                                               results ς2s)]
+                             [(work calls) (call seen work calls summaries ς0×ς1 ς2s
+                                                 (λ (work ς2 ς3) (update seen work ς0 ς1 ς2 ς3)))])
+                  (loop seen work calls tails summaries results finals)))]
 	     [(ς-tail? ς1)
-	      (let-values ([(work tails) (call seen work tails summaries ς0×ς1 (succs ς1)
-					       (λ (work ς2 ς3) (propagate seen work ς0 ς3)))])
-		(loop seen work calls tails summaries finals))]
+              (let ([ς2s (succs ς1)])
+                (let-values ([(results) (foldl (λ (ς2 results)
+                                                 (hash-update results ς0
+                                                              (λ (->) (hash-update -> (ς-tail-ℓ ς1) (add ς2) (set)))
+                                                              (hasheq)))
+                                               results ς2s)]
+                             [(work tails) (call seen work tails summaries ς0×ς1 ς2s
+                                                 (λ (work ς2 ς3) (propagate seen work ς0 ς3)))])
+		(loop seen work calls tails summaries results finals)))]
 	     [(ς-exit? ς1)
 	      (if (equal? ς0 ς-init)
-		(loop seen work calls tails summaries (set-add finals ς1))
-		(let ([summaries (hash-update summaries ς0 (λ (ss) (set-add ss ς1)) (set))])
+		(loop seen work calls tails summaries results (set-add finals ς1))
+		(let ([summaries (hash-update summaries ς0 (add ς1) (set))])
 		  (let* ([work (retr seen work calls ς0
 				     (λ (work ς2 ς3) (update seen work ς2 ς3 ς0 ς1)))]
 			 [work (retr seen work tails ς0
-				     (λ (work ς2 ς3) (propagate seen work ς2 ς1)))])
-		    (loop seen work calls tails summaries finals))))]
+				     (λ (work ς2 ς3)
+                                       (match-let ([(ς-exit σ1 v1 ω1) ς1]
+                                                   [(ς-tail σ3 ρ3 Ω3 f3 es3 ℓ3) ς3])
+                                         (let ([ω1 (match ω1
+                                                     [`(NODE ,p0)
+                                                      `(NODE ,(D (list-ref es3 0) Ω3))]
+                                                     [`(NODE ,p0 ,p1)
+                                                      `(NODE ,(D (list-ref es3 0) Ω3) ,(D (list-ref es3 1) Ω3))])])
+                                           (propagate seen work ς2 (ς-exit σ1 v1 ω1))))))])
+		    (loop seen work calls tails summaries results finals))))]
 	     [else
 	      (error 'analyze "unrecognized state ~a" ς1)]))]))))
 
 (module+ main
-  (define (watch summaries)
-    (for ([(ς ςs) (in-hash summaries)])
-      (let ([f (ς-entr-f ς)])
-        ((current-print) (if (symbol? f) f (unP f))))
-      ((current-print)
-       (for/fold ([summary (for/list ([v (in-list (ς-entr-vs ς))])
-                             (set))])
-                 ([ς (in-set ςs)])
-         (for/list ([si (in-list summary)]
-                    [ti (in-list (ς-exit-U ς))])
-           (set-union si ti))))
-      ((current-print)
-       (for/fold ([summary (set)])
-                 ([ς (in-set ςs)])
-         (set-union summary (ς-exit-ω ς))))))
-  
-  #;(analyze (CPS (P ((λ (x) (x x)) (λ (y) (y y))))))
-  (displayln "p")
-  (let-values ([(ς-init seen calls tails summaries finals) (analyze (CPS (P ((λ (x) x) ((λ (y) y) 42)))))])
-    (watch summaries))
+  (define p0 (P ((λ (beta) ((λ (flip) (flip (beta 1 1)))
+                            (λ (p) (not (zero? (sample bernoulliERP p))))))
+                 (λ (α β) (sample betaERP α β)))))
 
-  (displayln "p")
-  (let-values ([(ς-init seen calls tails summaries finals) (analyze (CPS (P ((λ (z x) x) 34 ((λ (y) y) 42)))))])
-    (watch summaries))
-  
-  (displayln "p")
-  (let-values ([(ς-init seen calls tails summaries finals) (analyze (CPS (P ((λ () ((λ () 42)))))))])
-    (watch summaries))
+  (displayln (unP p0))
 
-  (displayln "p")
-  (let-values ([(ς-init seen calls tails summaries finals) (analyze (CPS (P (flip (beta 1 1)))))])
-    (watch summaries))
+  (define (sample-entries ςs)
+    (for/fold ([ςs (set)])
+        ([ς0 (in-set ςs)])
+      (if (memq (ς-entr-f ς0) '(betaERP bernoulliERP))
+        (set-add ςs ς0)
+        ςs)))
+
+  (define (resolve calls tails summaries results)
+    (letrec ([inner0 (λ (ς0 s)
+                      (match s
+                        [`(NODE ,v0)
+                         (inner1 ς0 v0)]
+                        [`(NODE ,v0 ,v1)
+                         (inner1 ς0 v0)]))]
+             [inner1 (λ (ς0 v)
+                       (match v
+                           [(parameter 0)
+                            (if (hash-has-key? calls ς0)
+                              (match-let* ([(cons ς0 ς1) (set-first (hash-ref calls ς0))]
+                                           [(ς-call σ1 ρ1 Ω1 f1 es1 k1 ℓ1) ς1])
+                                (cons ℓ1 (inner1 ς0 (D (car es1) Ω1))))
+                              (match-let* ([(cons ς0 ς1) (set-first (hash-ref tails ς0))]
+                                           [(ς-tail σ1 ρ1 Ω1 f1 es1 ℓ1) ς1])
+                                (cons ℓ1 (inner1 ς0 (D (car es1) Ω1)))))]
+                           [(result ℓ) ; below returns summary entry states
+                            (let ([ς0 (set-first (hash-ref (hash-ref results ς0) ℓ))])
+                              (cons `(- ,ℓ) (inner0 ς0 (ς-exit-ω (set-first (hash-ref summaries ς0))))))]
+                           [(immediate e)
+                            e]))])
+      inner0))
   
-  (displayln "p")
-  (let-values ([(ς-init seen calls tails summaries finals) (analyze (CPS (P ((λ (x y) (if0 (flip 1/2) x y)) 12 13))))])
-    (watch summaries)))
+  (let-values ([(ς-init seen calls tails summaries results finals) (analyze (CPS p0))])
+    (for ([ς0 (in-set (sample-entries (hash-keys summaries)))])
+      (for ([ς1 (in-set (hash-ref summaries ς0))])
+        ((current-print) ((resolve calls tails summaries results) ς0 (ς-exit-ω ς1)))))))
+
+; delta address not as expected
+; join delta addresses
+; propagate blanket of conditional, more elaborate matching
+; stop hardcoding the node resolution
+; get it working with cycles
+; get forward deltas working too
+; formalize precision of forward and backward (can we just reverse the relation that we extract?)
+
