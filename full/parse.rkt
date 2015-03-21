@@ -16,7 +16,7 @@
 (struct ref exp (x) #:transparent)
 (struct href ref () #:transparent)
 (struct sref ref () #:transparent)
-(struct fix exp (x λ e) #:transparent)
+(struct fix exp (x λ) #:transparent)
 (struct if0 exp (t c a) #:transparent)
 (struct sam exp (f θs ℓ) #:transparent)
 
@@ -32,15 +32,12 @@
       (andmap identifier? (syntax->list #'(xs ...)))
       (let-values ([(e hrefs) (E #'e (syntax->list #'(xs ...)))])
 	(values #`(lam (list #,@(map (λ (x) (if (in-ρ x hrefs) #`(hvar '#,x) #`(svar '#,x))) (syntax->list #'(xs ...)))) #,e) hrefs))]
-     [(fix f (λ (xs ...) e0) e1)
+     [(fix f (λ (xs ...) e))
       (and (identifier? #'f) (andmap identifier? (syntax->list #'(xs ...))))
-      (let-values ([(e0 e0-hrefs) (E #'e0 (cons #'f (syntax->list #'(xs ...))))]
-                   [(e1 e1-hrefs) (E #'e1 (cons #'f ρ))])
-        (let ([hrefs (append e0-hrefs e1-hrefs)])
-          (values #`(fix #,(if (in-ρ #'f hrefs) #'(hvar 'f) #'(svar 'f))
-                         (lam (list #,@(map (λ (x) (if (in-ρ x e0-hrefs) #`(hvar '#,x) #`(svar '#,x))) (syntax->list #'(xs ...)))) #,e0)
-                         #,e1)
-                  hrefs)))]
+      (let-values ([(e e-hrefs) (E #'e (cons #'f (syntax->list #'(xs ...))))])
+        (values #`(fix #,(if (in-ρ #'f e-hrefs) #'(hvar 'f) #'(svar 'f))
+                         (lam (list #,@(map (λ (x) (if (in-ρ x e-hrefs) #`(hvar '#,x) #`(svar '#,x))) (syntax->list #'(xs ...)))) #,e))
+                e-hrefs))]
      [(if0 t c a)
       (let-values ([(t t-hrefs) (E #'t ρ)]
 		   [(c c-hrefs) (E #'c ρ)]
@@ -122,6 +119,8 @@
 	 (CPS e (klam (svar x) (K (sref x)))))]
       [else
        (match e
+         [(fix f e)
+          (K (fix f (atomize e values)))]
 	 [(lam xs e)
 	  (let ([k (gensym 'k)])
 	    (K (ulam xs (kvar k) (CPS e (kref k)))))])]))
@@ -142,8 +141,8 @@
        (match e
 	[(app f es ℓ)
 	 (atomize f (λ (f) (atomize* es (λ (es) (uapp f es k ℓ)))))]
-        [(fix f (? lam? e0) e1)
-         (fix f )]
+        [(fix f e)
+         (fix f (atomize e values))]
 	[(if0 t c a)
 	 (bind k (λ (k) (atomize t (λ (t) (if0 t (CPS c k) (CPS a k))))))]
         [(sam f θs ℓ)
@@ -176,6 +175,8 @@
      `(,(unP f) ,@(map unP es) ,ℓ)]
     [(sam f θs ℓ)
      `(sample ,(unP f) ,@(map unP θs) ,ℓ)]
+    [(fix f e)
+     `(fix ,(unP f) ,(unP e))]
     [(lam xs e)
      `(λ ,(map unP xs) ,(unP e))]
     [(if0 t c a)
@@ -200,4 +201,5 @@
   (unP (CPS (P (if0 0 5 6))))
   (unP (CPS (P (f (if0 0 5 6)))))
   (unP (CPS (P (f (if0 (g 42) 5 6)))))
-  (unP (CPS (P (fix f (λ (n) (if0 n 1 (* n (f (- n 1))))) (f 5))))))
+  (unP (CPS (P (fix f (λ (x) (f x))))))
+  (unP (CPS (P ((λ (f) (f 5)) (fix f (λ (n) (if0 n 1 (* n (f (- n 1)))))))))))
