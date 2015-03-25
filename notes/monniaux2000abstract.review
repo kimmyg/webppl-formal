@@ -1,0 +1,16 @@
+Considering that Dijkstra's weakest precondition semantics cannot deal automatically with loop invariants, but each iteration of the loop would have a weakest precondition, is abstract an interpretation a way to, in a limited number of cases, derive this weakest precondition? Maybe the chosen abstraction determines the way that preconditions can be joined, the top of the lattice represents--perhaps--the strongest possible precondition or something (since imprecision is bad, but I'm not considering what's actually happening), and their convergence on the lattice is the loop invariant.
+When talking about the semantics of boolean expressions and code fragments, the paper gives an amazingly comprehensible account of abstract interpretation.
+Measurable functions: I'll briefly consider how measurability in the inverse image differs from the mere image. A function could take half of a measurable set in X to one measurable set in Y and the other half to another. This would ``satisfy'' the image definition but not the inverse image. It seems that, essentially, a function cannot split up measurable sets, in order to be called measurable.
+A good exercise would be to prove that a product measure over a product sigma algebra is determined by the individual measures in a unique way.
+"Banach norm of total variation"?
+
+Parameter U W : Set.
+Parameter X : Ensemble U.
+Definition P_X := PowerSet X.
+Parameter Xsharp : Ensemble W.
+Axiom Xsharp_preordered : preorder Xsharp.
+Parameter gamma : W -> Ensemble U.
+Definition abstraction (xsharp : W) (xflat : Ensemble U) := member xsharp Xsharp -> subset xflat (gamma xsharp).
+"topologically closed"
+"set S stable by f"
+"rational languages can be represented by an infinity of finite automata"
