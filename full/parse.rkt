@@ -150,24 +150,39 @@
   (let ([k (gensym 'k)])
     (ulam null (kvar k) (CPS p (kref k)))))
 
-(define (unCPS e)
-  e
-  #;
-  (if (or (num? e)
-  (ref? e))
-  e
-  (match e
-  [(uapp f es k ℓ)
-  (match k
-  [(kref k)
-  (app (unCPS f) (map unCPS es) ℓ)]
-  [(klam (svar r) e)])]
-  [(kapp k e)
-  (match k
-  [(kref k)
-  (unCPS e)])]
-  [(ulam xs k e)
-  (lam xs (unCPS e))])))
+(define (unCPS p)
+  (define (appl κ e ρ)
+    (match κ
+      [(klam x e0)
+       (unCPS e0 (hash-set ρ (var-x x) e))]
+      [(kref k)
+       e]))
+  (define (deatomize e ρ)
+    (if (num? e)
+      e
+      (match e
+        [(ref x)
+         (or (hash-ref ρ x #f) e)]
+        [(ulam xs κ e)
+         (lam xs (unCPS e ρ))])))
+  (define (deatomize* es ρ)
+    (match es
+      [(list)
+       (list)]
+      [(cons e es)
+       (cons (deatomize e ρ) (deatomize* es ρ))]))
+  (define (unCPS e ρ)
+    (match e
+      [(uapp f es κ ℓ)
+       (appl κ (app (deatomize f ρ) (deatomize* es ρ) ℓ) ρ)]
+      [(usam d θs κ ℓ)
+       (appl κ (list (deatomize d ρ) (deatomize* θs ρ) ℓ) ρ)]
+      [(if0 t c a)
+       (if0 (deatomize t ρ) (unCPS c ρ) (unCPS a ρ))]
+      [(kapp κ e)
+       (appl κ e ρ)]))
+  (match-let ([(ulam '() κ e) p])
+    (unCPS e (hasheq))))
 
 (define unP
   (match-lambda
@@ -190,16 +205,22 @@
      `(λ (,(unP x)) ,(unP e))]
     [(kapp k e)
      `(,(unP k) ,(unP e))]
-    [(uapp f es k ℓ)
-     `(,(unP f) ,@(map unP es) ,(unP k) ,ℓ)]
-    [(ulam xs k e)
-     `(λ (,@(map unP xs) ,(unP k)) ,(unP e))]))
+    [(uapp f es κ ℓ)
+     `(,(unP f) ,@(map unP es) ,(unP κ) ,ℓ)]
+    [(usam d θs κ ℓ)
+     `(,(unP d) ,@(map unP θs) ,(unP κ) ,ℓ)]
+    [(ulam xs κ e)
+     `(λ (,@(map unP xs) ,(unP κ)) ,(unP e))]))
 
 (module+ main
   (unP (CPS (P (f (g 42)))))
+  (unP (unCPS (CPS (P (f (g 42))))))
   (unP (CPS (P ((λ (x) (x x)) (λ (y) (y y))))))
+  (unP (unCPS (CPS (P ((λ (x) (x x)) (λ (y) (y y)))))))
   (unP (CPS (P (if0 0 5 6))))
+  (unP (unCPS (CPS (P (if0 0 5 6)))))
   (unP (CPS (P (f (if0 0 5 6)))))
+  (unP (unCPS (CPS (P (f (if0 0 5 6))))))
   (unP (CPS (P (f (if0 (g 42) 5 6)))))
   (unP (CPS (P (fix f (λ (x) (f x))))))
   (unP (CPS (P ((λ (f) (f 5)) (fix f (λ (n) (if0 n 1 (* n (f (- n 1)))))))))))
