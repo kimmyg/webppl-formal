@@ -96,6 +96,10 @@
 (define (inject p)
   (ς-entr empty-σ p null))
 
+(define (update v u)
+  (let ([add (add v)])
+    (λ (v h) (hash-update h v add u))))
+
 (define ((add x) s)
   (set-add s x))
 
@@ -176,7 +180,7 @@
   (define (propagate* seen work ς0 ς1s)
     (foldl (λ (ς1 work) (propagate seen work ς0 ς1)) work ς1s))
 
-  (define (update seen work ς0 ς1 ς2 ς3)
+  (define (call-retr seen work ς0 ς1 ς2 ς3)
     (match-let ([(ς-call σ1 ρ1 f1 es1 ℓ1 Ω1 H1 (klam x e)) ς1]
 		[(ς-entr σ2 f2 vs2) ς2]
 		[(ς-exit σ3 v3 H3 ω3) ς3])
@@ -189,8 +193,12 @@
           (let ([ρ (ρ-update x v3 ρ)]
                 [Ω (Ω-update x (result ℓ1) Ω)])
             (propagate* seen work ς0 (ς-eval σ ρ e Ω H)))))))
+
+  (define (tail-retr seen work ς0 ς1 ς2 ς3)
+    (match-let ([(ς-exit σ3 v3 H3 ω3) ς3])
+      (propagate seen work ς0 (ς-exit σ3 H3 v3 (result (ς-tail-ℓ ς1))))))
   
-  (define (call seen work calls summaries ς0×ς1 ς2s f)
+  (define (call summaries seen work calls ς0×ς1 ς2s f)
     (for/fold ([work work]
 	       [calls calls])
 	([ς2 (in-list ς2s)])
@@ -199,50 +207,46 @@
                 (f work ς2 ς3))
               (hash-update calls ς2 (λ (cs) (set-add cs ς0×ς1)) (set)))))
   
-  (define (retr seen work calls ς0 f)
+  (define (retr work calls ς0 f)
     (for/fold ([work work])
 	([ς2×ς3 (in-set (hash-ref calls ς0 (set)))])
       (match-let ([(cons ς2 ς3) ς2×ς3])
 	(f work ς2 ς3))))
   
-  (let ([ς-init (inject (CPS p))])
-    (let loop ([seen (set)]
-	       [work (list (cons ς-init ς-init))]
-	       [calls (hash)]
-	       [tails (hash)]
-               [exits (hasheq)]
-               [preds (hasheq)]
-	       [summaries (hash)])
-      (match work
-	[(list)
-	 (values calls tails exits preds summaries)]
-	[(cons (and ς0×ς1 (cons ς0 ς1)) work)
-	 (let ([seen (set-add seen ς0×ς1)])
-	   (cond
-	     [(ς-entr? ς1)
-	      (let ([work (propagate* seen work ς0 (succs ς1))])
-		(loop seen work calls tails exits preds summaries))]
-	     [(ς-call? ς1)
-              (let-values ([(work calls) (call seen work calls summaries ς0×ς1 (succs ς1)
-                                               (λ (work ς2 ς3) (update seen work ς0 ς1 ς2 ς3)))])
-                (loop seen work calls tails exits preds summaries))]
-	     [(ς-tail? ς1)
-              (let-values ([(work tails) (call seen work tails summaries ς0×ς1 (succs ς1)
-                                               (λ (work ς2 ς3) (propagate seen work ς0 ς3)))])
-		(loop seen work calls tails exits preds summaries))]
-	     [(ς-exit? ς1)
-              (let ([summaries (hash-update summaries ς0 (add ς1) (set))])
-                (if (equal? ς0 ς-init)
-                  (loop seen work calls tails exits preds summaries)
-                  (let* ([work (retr seen work calls ς0
-                                     (λ (work ς2 ς3) (update seen work ς2 ς3 ς0 ς1)))]
-			 [work (retr seen work tails ς0
-				     (λ (work ς2 ς3)
-                                       (match-let ([(ς-exit σ1 v1 H1 ω1) ς1])
-                                         (propagate seen work ς2 (ς-exit σ1 H1 v1 (result (ς-tail-ℓ ς3)))))))])
-		    (loop seen work calls tails exits preds summaries))))]
-	     [else
-	      (error 'analyze "unrecognized state ~a" ς1)]))]))))
+  (let loop ([seen (set)]
+             [work (let ([ς-init (inject (CPS p))])
+                     (list (cons ς-init ς-init)))]
+             [calls (hash)]
+             [tails (hash)]
+             [exits (hasheq)]
+             [preds (hasheq)]
+             [summaries (hash)])
+    (match work
+      [(list)
+       (values calls tails exits preds summaries)]
+      [(cons (and ς0×ς1 (cons ς0 ς1)) work)
+       (let ([seen (set-add seen ς0×ς1)])
+         (cond
+           [(ς-entr? ς1)
+            (let ([ς2s (succs ς1)])
+              (let ([work (propagate* seen work ς0 ς2s)]
+                    [preds (foldl (update ς1 (seteq)) preds ς2s)])
+		(loop seen work calls tails exits preds summaries)))]
+           [(ς-call? ς1)
+            (let-values ([(work calls) (call summaries seen work calls ς0×ς1 (succs ς1)
+                                             (λ (work ς2 ς3) (call-retr seen work ς0 ς1 ς2 ς3)))])
+              (loop seen work calls tails exits preds summaries))]
+           [(ς-tail? ς1)
+            (let-values ([(work tails) (call summaries seen work tails ς0×ς1 (succs ς1)
+                                             (λ (work ς2 ς3) (tail-retr seen work ς0 ς1 ς2 ς3)))])
+              (loop seen work calls tails exits preds summaries))]
+           [(ς-exit? ς1)
+            (let ([summaries (hash-update summaries ς0 (add ς1) (set))])
+              (let* ([work (retr work calls ς0 (λ (work ς2 ς3) (call-retr seen work ς2 ς3 ς0 ς1)))]
+                     [work (retr work tails ς0 (λ (work ς2 ς3) (tail-retr seen work ς2 ς3 ς0 ς1)))])
+                (loop seen work calls tails exits preds summaries)))]
+           [else
+            (error 'analyze "unrecognized state ~a" ς1)]))])))
 
 (module+ main
   (define p0 (P 42))
