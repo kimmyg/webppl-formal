@@ -143,13 +143,13 @@
 (define succs
   (match-lambda
     [(ς-entr σ 'betaERP (list v0 v1))
-     (list (ς-exit σ null (set 'num) (random (list (parameter 0) (parameter 1)))))]
+     (list (ς-exit σ (set 'num) null (random (list (parameter 0) (parameter 1)))))]
     [(ς-entr σ 'bernoulliERP (list v))
-     (list (ς-exit σ null (set 'num) (random (list (parameter 0)))))]
+     (list (ς-exit σ (set 'num) null (random (list (parameter 0)))))]
     [(ς-entr σ 'not (list v))
-     (list (ς-exit σ null (set #t #f) (primitive 'not (list (parameter 0)))))]
+     (list (ς-exit σ (set #t #f) null (primitive 'not (list (parameter 0)))))]
     [(ς-entr σ 'zero? (list v))
-     (list (ς-exit σ null (set #t #f) (primitive 'zero? (list (parameter 0)))))]
+     (list (ς-exit σ (set #t #f) null (primitive 'zero? (list (parameter 0)))))]
     [(ς-entr σ (ulam xs κ e) vs)
      (let ([ρ empty-ρ]
            [Ω empty-Ω])
@@ -281,8 +281,40 @@
                                   [(work exits preds) (tail-retr work tails exits preds ς0 ς1)])
                       (loop seen work calls tails exits preds summaries)))]
                  [else
-                  (error 'analyze "unrecognized state ~a" ς1)])))])))
-  )
+                  (error 'analyze "unrecognized state ~a" ς1)])))]))))
+
+(define (resolve p)
+  (define (resolve calls tails exits preds summaries)
+    (define (f ς0 ς1 ω)
+      (match ω
+        [(constant e)
+         e]
+        [(parameter n)
+         (for/set ([ς0×ς1 (in-set (set-union (hash-ref calls ς0 (set))
+                                             (hash-ref tails ς0 (set))))])
+           (match-let ([(cons ς0 ς1) ς0×ς1])
+             (match ς1
+               [(or (ς-call σ1 ρ1 f1 es1 ℓ1 Ω1 H1 _)
+                    (ς-tail σ1 ρ1 f1 es1 ℓ1 Ω1 H1))
+                (cons ℓ1 (f ς0 ς1 (D (list-ref es1 n) Ω1)))])))]
+        [(random ωs)
+         (random (map (λ (ω) (f ς0 ς1 ω)) ωs))]
+        [(result ℓ)
+         (let loop ([ςs (cons ς1 (hash-ref preds (cons ς0 ς1)))])
+           (match ςs
+             [(cons (and ς (ς-exit σ v H (result (== ℓ)))) ςs)
+              (cons `(- ,ℓ) (for/set ([ς0×ς1 (in-set (hash-ref exits (cons ς0 ς)))])
+                              (match-let ([(cons ς0 ς1) ς0×ς1])
+                                (f ς0 ς1 (ς-exit-ω ς1)))))]
+             [(cons ς ςs) (loop ςs)]))]))
+    
+    (let ([ς0s (filter (λ (ς0) (let ([f (ς-entr-f ς0)]) (or (eq? f 'bernoulliERP) (eq? f 'betaERP)))) (hash-keys summaries))])
+      (for*/set ([ς0 (in-list ς0s)]
+             [ς1 (in-set (hash-ref summaries ς0))])
+        (f ς0 ς1 (ς-exit-ω ς1)))))
+  
+  (let-values ([(calls tails exits preds summaries) (analyze p)])
+    (resolve calls tails exits preds summaries)))
 
 (module+ main
   (define p0 (P 42))
@@ -297,7 +329,7 @@
                             (fix geom (λ (p) (if (flip p) 0 (add1 (geom p)))))))
                  (λ (p) (not (zero? (sample bernoulliERP p)))))))
   
-  (time (analyze p3)))
+  (resolve p2))
   
   
 
