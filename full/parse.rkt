@@ -97,8 +97,9 @@
   (define (bind k K)
     (cond
       [(klam? k)
-       (let ([k0 (gensym 'k)])
-	 (uapp (ulam null (kvar k0) (K (kref k0))) null k k0))]
+       (let ([k0 (gensym 'k)]
+             [ℓ (gensym 'dummy)])
+	 (uapp (ulam null (kvar k0) (K (kref k0))) null k ℓ))]
       [(kref? k)
        (K k)]
       [else
