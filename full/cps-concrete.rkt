@@ -129,12 +129,15 @@
   (P ((λ (geom) (geom 1/3))
       (fix geom (λ (p) (if0 (sample bernoulli p) 0 (add1 (geom p))))))))
 
+(define p4
+  (P (if0 (sample bernoulli 1/2) ((λ (x) 42) (if0 (sample bernoulli 1/3) 12 13)) 35)))
+
 (define (run p)
   (let ([cpsp (CPS p)])
     (displayln (unP p))
     (displayln (unP cpsp))
     (inject cpsp)))
 
-(run p3)
+(run p4)
 
 
