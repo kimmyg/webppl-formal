@@ -7,65 +7,67 @@
      prim
      rand
      (λ (x ...) e)
-     (e e ...)
+     (e e ... ℓ)
      (let ([x e]) e)
      (if0 e e e)
      (fix e)]
   [n number]
+  [ℓ (variable-prefix ℓ)]
   [prim + - * /]
   [rand flip beta gaussian]
   [x variable-not-otherwise-mentioned])
 
 (define-extended-language LM L
-  [ς (ev e ρ κ)
-     (ap v ρ κ)]
+  [ς (ev e ρ ι κ)
+     (ap κ v)]
   [v n prim rand (clos (λ (x ...) e) ρ)]
   [ρ ((x v) ...)]
+  [ι (ℓ ...)]
   [κ halt-κ
-     (let-κ x ρ e κ)
-     (rat-κ ρ (e ...) κ)
-     (ran-κ v (v ...) ρ (e ...) κ)])
+     (let-κ x ρ e ι κ)
+     (rat-κ ρ (e ...) ℓ ι κ)
+     (ran-κ v (v ...) ρ (e ...) ℓ ι κ)])
 
 (define ->
   (reduction-relation
    LM
    #:domain ς
 
-   [--> (ev x ρ κ)
-        (ap (lookup ρ x) ρ κ)]
+   [--> (ev x ρ ι κ)
+        (ap κ (lookup ρ x))]
    
-   [--> (ev n ρ κ)
-        (ap n ρ κ)]
+   [--> (ev n ρ ι κ)
+        (ap κ n)]
 
-   [--> (ev prim ρ κ)
-        (ap prim ρ κ)]
+   [--> (ev prim ρ ι κ)
+        (ap κ prim)]
 
-   [--> (ev rand ρ κ)
-        (ap rand ρ κ)]
+   [--> (ev rand ρ ι κ)
+        (ap κ rand)]
 
-   [--> (ev (λ (x ...) e) ρ κ)
-        (ap (clos (λ (x ...) e) ρ) ρ κ)]
+   [--> (ev (λ (x ...) e) ρ ι κ)
+        (ap κ (clos (λ (x ...) e) ρ))]
 
-   [--> (ev (e_f e ...) ρ κ)
-        (ev e_f ρ (rat-κ ρ (e ...) κ))]
+   [--> (ev (e_f e ... ℓ) ρ ι κ)
+        (ev e_f ρ ι (rat-κ ρ (e ...) ℓ ι κ))]
 
-   [--> (ev (let ([x e_0]) e_1) ρ κ)
-        (ev e_0 ρ (let-κ x ρ e_1 κ))]
+   [--> (ev (let ([x e_0]) e_1) ρ ι κ)
+        (ev e_0 ρ ι (let-κ x ρ e_1 ι κ))]
 
-   [--> (ap v ρ_0 (rat-κ ρ_1 () κ))
-        (apply v () κ)]
+   [--> (ap (rat-κ ρ_1 () ℓ ι κ) v_f)
+        (apply v_f (ℓ . ι) κ)]
    
-   [--> (ap v_f ρ_0 (rat-κ ρ_1 (e_1 e ...) κ))
-        (ev e_1 ρ_1 (ran-κ v_f () ρ_1 (e ...) κ))]
+   [--> (ap (rat-κ ρ_1 (e_1 e ...) ℓ ι κ) v_f)
+        (ev e_1 ρ_1 ι (ran-κ v_f () ρ_1 (e ...) ℓ ι κ))]
 
-   [--> (ap v_n ρ_0 (ran-κ v_f (v ...) ρ_1 () κ))
-        (apply v_f (v ... v_n) κ)]
+   [--> (ap (ran-κ v_f (v ...) ρ_1 () ℓ ι κ) v_n)
+        (apply v_f (v ... v_n) (ℓ . ι) κ)]
    
-   [--> (ap v_i ρ_0 (ran-κ v_f (v ...) ρ_1 (e_i+1 e ...) κ))
-        (ev e_i+1 ρ_1 (ran-κ v_f (v ... v_i) ρ_1 (e ...) κ))]
+   [--> (ap (ran-κ v_f (v ...) ρ_1 (e_i+1 e ...) ℓ ι κ) v_i)
+        (ev e_i+1 ρ_1 ι (ran-κ v_f (v ... v_i) ρ_1 (e ...) ℓ ι κ))]
    
-   [--> (ap v ρ_0 (let-κ x ρ_1 e κ))
-        (ev e (extend ρ_1 x v) κ)]))
+   [--> (ap (let-κ x ρ_1 e ι κ) v)
+        (ev e (extend ρ_1 x v) ι κ)]))
 
 (define-metafunction LM
   lookup : ρ x -> v
@@ -84,15 +86,15 @@
    (extend* (extend ρ x_0 v_0) (x ...) (v ...))])
 
 (define-metafunction LM
-  apply : v (v ...) κ -> ς
-  [(apply prim (n ...) κ)
-   (ap 42 () κ)]
-  [(apply (clos (λ (x ..._0) e) ρ) (v ..._0) κ)
-   (ev e (extend* ρ (x ...) (v ...)) κ)])
+  apply : v (v ...) ι κ -> ς
+  [(apply prim (n ...) ι κ)
+   (ap κ 42)]
+  [(apply (clos (λ (x ..._0) e) ρ) (v ..._0) ι κ)
+   (ev e (extend* ρ (x ...) (v ...)) ι κ)])
 
 #;(traces -> (term (ev (let ([x 5]) x) () halt-κ)))
 #;(apply-reduction-relation* -> (term (ev (+ 2 2) () halt-κ)))
-(traces -> (term (ev ((λ (x) (x x)) (λ (y) (y y))) () halt-κ)))
+(traces -> (term (ev ((λ (x) (x x ℓ1)) (λ (y) (y y ℓ2)) ℓ0) () () halt-κ)))
 
 #;(render-reduction-relation -> "direct-concrete.ps")
 
