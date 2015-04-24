@@ -1,85 +1,65 @@
 #lang racket/base
-(require redex/reduction-semantics)
+(require redex/reduction-semantics
+         "util.rkt")
 
 (define-language L
-  [e x
-     n
-     b
-     prim
-     rand
-     (λ (x ...) e)
+  [e x n b prim rand
+     (λ (x ...) e) 
+     (fix x (λ (x ...) e))
      (e e ... ℓ)
-     (let ([x e]) e)
      (if e e e)
-     (fix x (λ (x ...) e))]
+     (let ([x e]) e)]
+  [x variable-not-otherwise-mentioned]
   [n number]
   [b #t #f]
-  [ℓ (variable-prefix ℓ)]
   [prim + - * / = < <= > >=]
   [rand flip beta gaussian]
-  [x variable-not-otherwise-mentioned])
+  [ℓ (variable-prefix ℓ)])
 
 (define-extended-language LM L
-  [ς (ev e ρ ω Ω ι κ)
-     (ap κ v ω)]
-  [v n b prim rand (clos (λ (x ...) e) ρ Ω) (clos (fix x (λ (x ...) e)) ρ Ω)]
-  [ρ ((x v) ...)]
-  [ω indeterminate
-     (degenerate v)
-     (true ω ω)
-     (fals ω ω)
+  [ς (ev e ρ ι κ)
+     (ap κ V)]
+  [v n b prim rand
+     (clos (λ (x ...) e) ρ)
+     (clos (fix x (λ (x ...) e)) ρ)]
+  [ω (degenerate v)
      (deterministic prim ω ω)
-     (random rand (ω ...))]
-  [Ω ((x ω) ...)]
+     (random rand (ω ...))
+     (true ω ω)
+     (fals ω ω)]
+  [V (v ω)]
+  [ρ ((x V) ...)]
   [ι (ℓ ...)]
   [κ halt-κ
-     (if-κ ω ρ Ω e e ι κ)
-     (let-κ x ρ Ω e ω ι κ)
-     (rat-κ ρ Ω (e ...) ℓ ι κ)
-     (ran-κ v ω (v ...) ρ (ω ...) Ω (e ...) ℓ ι κ)])
-
-(define (->meta f)
-  (case f
-    [(+) +] [(-) -] [(*) *] [(/) /]
-    [(=) =]
-    [else (error '->meta "not defined for ~a" f)]))
+     (if-κ ρ e e ι κ)
+     (ifω-κ V κ)
+     (fω-κ ω κ)
+     (let-κ x ρ e ι κ)
+     (rat-κ ρ (e ...) ℓ ι κ)
+     (ran-κ V (V ...) ρ (e ...) ℓ ι κ)])
 
 (define-metafunction LM
   inject : e -> ς
-  [(inject e) (ev e () indeterminate () () halt-κ)])
+  [(inject e) (ev e () () halt-κ)])
 
 (define-metafunction LM
-  ρ-lookup : ρ x -> v
-  [(ρ-lookup ((x_0 v_0) (x v) ...) x_0) v_0]
-  [(ρ-lookup ((x_1 v_1) (x v) ...) x_0) (ρ-lookup ((x v) ...) x_0)])
+  ρ-lookup : ρ x -> V
+  [(ρ-lookup ((x_0 V_0) (x V) ...) x_0) V_0]
+  [(ρ-lookup ((x_1 V_1) (x V) ...) x_0) (ρ-lookup ((x V) ...) x_0)])
 
 (define-metafunction LM
-  ρ-extend : ρ x v -> ρ
-  [(ρ-extend ρ x v)
-   ((x v) . ρ)])
+  ρ-extend : ρ x V -> ρ
+  [(ρ-extend ρ x V)
+   ((x V) . ρ)])
 
 (define-metafunction LM
-  ρ-extend* : ρ (x ...) (v ...) -> ρ
+  ρ-extend* : ρ (x ...) (V ...) -> ρ
   [(ρ-extend* ρ () ()) ρ]
-  [(ρ-extend* ρ (x_0 x ...) (v_0 v ...))
-   (ρ-extend* (ρ-extend ρ x_0 v_0) (x ...) (v ...))])
+  [(ρ-extend* ρ (x_0 x ...) (V_0 V ...))
+   (ρ-extend* (ρ-extend ρ x_0 V_0) (x ...) (V ...))])
 
-(define-metafunction LM
-  Ω-lookup : Ω x -> ω
-  [(Ω-lookup ((x_0 ω_0) (x ω) ...) x_0) ω_0]
-  [(Ω-lookup ((x_1 ω_1) (x ω) ...) x_0) (Ω-lookup ((x ω) ...) x_0)])
 
-(define-metafunction LM
-  Ω-extend : Ω x ω -> Ω
-  [(Ω-extend Ω x ω)
-   ((x ω) . Ω)])
-
-(define-metafunction LM
-  Ω-extend* : Ω (x ...) (ω ...) -> Ω
-  [(Ω-extend* Ω () ()) Ω]
-  [(Ω-extend* Ω (x_0 x ...) (ω_0 ω ...))
-   (Ω-extend* (Ω-extend Ω x_0 ω_0) (x ...) (ω ...))])
-
+#;
 (define-metafunction LM
   compose : ω ω -> ω
   [(compose indeterminate ω) ω]
@@ -92,114 +72,125 @@
   [(lift (true ω_0 ω_1) ω) (true ω_0 (lift ω_1 ω))]
   [(lift (fals ω_0 ω_1) ω) (fals ω_0 (lift ω_1 ω))])
 
-(require math/distributions)
-
-(define (backflip x p) (not (zero? (inexact->exact (flbernoulli-inv-cdf p x #f #f)))))
-(define (backbeta x α β) (flbeta-inv-cdf α β x #f #f))
-(define (backgaussian x μ σ²) (flnormal-inv-cdf μ (sqrt σ²) x #f #f))
-
 (define (make-> O)
   (define-metafunction LM
-    apply : v ω (v ...) (ω ...) ι κ -> ς
-    [(apply prim ω_f (n_0 n_1) (ω_0 ω_1) ι κ)
-     (ap κ ,((->meta (term prim)) (term n_0) (term n_1)) (lift ω_f (deterministic prim ω_0 ω_1)))]
-    [(apply flip ω_f (v_p) (ω_p) ι κ)
-     (ap κ ,(backflip (O (term ι)) (term v_p)) (lift ω_f (random flip (ω_p))))]
-    [(apply beta ω_f (v_α v_β) (ω_α ω_β) ι κ)
-     (ap κ ,(backbeta (O (term ι)) (term v_α) (term v_β)) (lift ω_f (random beta (ω_α ω_β))))]
-    [(apply beta ω_f (v_μ v_σ²) (ω_μ ω_σ²) ι κ)
-     (ap κ ,(backgaussian (O (term ι)) (term v_μ) (term v_σ²)) (lift ω_f (random beta (ω_μ ω_σ²))))]
-    [(apply (clos (λ (x ..._0) e) ρ Ω) ω_f (v ..._0) (ω ..._0) ι κ)
-     (ev e (ρ-extend* ρ (x ...) (v ...)) (lift ω_f indeterminate) (Ω-extend* Ω (x ...) (ω ...)) ι κ)]
-    [(apply (clos (fix x_f (λ (x ..._0) e)) ρ Ω) ω_f (v ..._0) (ω ..._0) ι κ)
-     (ev e
-         (ρ-extend* (ρ-extend ρ x_f (clos (fix x_f (λ (x ...) e)) ρ Ω)) (x ...) (v ...))
-         (lift ω_f indeterminate)
-         (Ω-extend* (Ω-extend Ω x_f (degenerate (clos (fix x_f (λ (x ...) e)) ρ Ω))) (x ...) (ω ...))
-         ι κ)])
+    apply : V (V ...) ι κ -> ς
+    [(apply (prim ω_f) ((n_0 ω_0) (n_1 ω_1)) ι κ)
+     (ap (fω-κ ω_f κ) (,((->meta (term prim)) (term n_0) (term n_1)) (lift ω_f (deterministic prim ω_0 ω_1))))]
+    [(apply (flip ω_f) ((v_p ω_p)) ι κ)
+     (ap (fω-κ ω_f κ) (,(backflip (O (term ι)) (term v_p)) (lift ω_f (random flip (ω_p)))))]
+    [(apply (beta ω_f) ((v_α ω_α) (v_β ω_β)) () ι κ)
+     (ap (fω-κ ω_f κ) (,(backbeta (O (term ι)) (term v_α) (term v_β)) (lift ω_f (random beta (ω_α ω_β)))))]
+    [(apply (beta ω_f) ((v_μ ω_μ) (v_σ² ω_σ²)) ι κ)
+     (ap (fω-κ ω_f κ) (,(backgaussian (O (term ι)) (term v_μ) (term v_σ²)) (lift ω_f (random beta (ω_μ ω_σ²)))))]
+    [(apply ((clos (λ (x ..._0) e) ρ) ω_f) (V ..._0) ι κ)
+     (ev e (ρ-extend* ρ (x ...) (V ...)) ι (fω-κ ω_f κ))]
+    [(apply ((clos (fix x_f (λ (x ..._0) e)) ρ) ω_f) (V ..._0) ι κ)
+     (ev e (ρ-extend* (ρ-extend ρ x_f ((clos (fix x_f (λ (x ...) e)) ρ)
+                                       (degenerate (clos (fix x_f (λ (x ...) e)) ρ))))
+                      (x ...) (V ...)) ι (fω-κ ω_f κ))])
 
   (reduction-relation
    LM
    #:domain ς
 
-   [--> (ev x ρ ω Ω ι κ)
-        (ap κ (ρ-lookup ρ x) (compose ω (Ω-lookup Ω x)))
+   [--> (ev x ρ ι κ)
+        (ap κ (ρ-lookup ρ x))
         "variable reference"]
    
-   [--> (ev n ρ ω Ω ι κ)
-        (ap κ n (compose ω (degenerate n)))
+   [--> (ev n ρ ι κ)
+        (ap κ (n (degenerate n)))
         "numeric constant"]
 
-   [--> (ev prim ρ ω Ω ι κ)
-        (ap κ prim (compose ω (degenerate prim)))
+   [--> (ev b ρ ι κ)
+        (ap κ (b (degenerate b)))
+        "boolean constant"]
+
+   [--> (ev prim ρ ι κ)
+        (ap κ (prim (degenerate prim)))
         "deterministic constant"]
 
-   [--> (ev rand ρ ω Ω ι κ)
-        (ap κ rand (compose ω (degenerate rand)))
+   [--> (ev rand ρ ι κ)
+        (ap κ (rand (degenerate rand)))
         "stochastic constant"]
 
-   [--> (ev (λ (x ...) e) ρ ω Ω ι κ)
-        (ap κ (clos (λ (x ...) e) ρ Ω) (compose ω (degenerate (clos (λ (x ...) e) ρ Ω))))
+   [--> (ev (λ (x ...) e) ρ ι κ)
+        (ap κ (v (degenerate v)))
+        (where v (clos (λ (x ...) e) ρ))
         "lambda expression"]
 
-   [--> (ev (fix x_f (λ (x ...) e)) ρ ω Ω ι κ)
-        (ap κ (clos (fix x_f (λ (x ...) e)) ρ Ω) (compose ω (degenerate (clos (fix x_f (λ (x ...) e)) ρ Ω))))
+   [--> (ev (fix x_f (λ (x ...) e)) ρ ι κ)
+        (ap κ (v (degenerate v)))
+        (where v (clos (fix x_f (λ (x ...) e)) ρ))
         "fix expression"]
 
-   [--> (ev (e_f e ... ℓ) ρ ω Ω ι κ)
-        (ev e_f ρ ω Ω ι (rat-κ ρ Ω (e ...) ℓ ι κ))
+   [--> (ev (e_f e ... ℓ) ρ ι κ)
+        (ev e_f ρ ι (rat-κ ρ (e ...) ℓ ι κ))
         "application expression"]
 
-   [--> (ev (let ([x e_0]) e_1) ρ ω Ω ι κ)
-        (ev e_0 ρ indeterminate Ω ι (let-κ x ρ Ω e_1 ω ι κ))
+   [--> (ev (let ([x e_0]) e_1) ρ ι κ)
+        (ev e_0 ρ ι (let-κ x ρ e_1 ι κ))
         "let expression"]
 
-   [--> (ev (if e_t e_c e_a) ρ ω Ω ι κ)
-        (ev e_t ρ indeterminate Ω ι (if-κ ω ρ Ω e_c e_a ι κ))
+   [--> (ev (if e_t e_c e_a) ρ ι κ)
+        (ev e_t ρ ι (if-κ ρ e_c e_a ι κ))
         "if expression"]
 
-   [--> (ap (rat-κ ρ_1 Ω_1 () ℓ ι κ) v_f ω_f)
-        (apply v_f ω_f () () (ℓ . ι) κ)
+   [--> (ap (rat-κ ρ_1 () ℓ ι κ) V_f)
+        (apply V_f () (ℓ . ι) κ)
         "function without arguments"]
    
-   [--> (ap (rat-κ ρ_1 Ω_1 (e_1 e ...) ℓ ι κ) v_f ω_f)
-        (ev e_1 ρ_1 indeterminate Ω_1 ι (ran-κ v_f ω_f () ρ_1 () Ω_1 (e ...) ℓ ι κ))
+   [--> (ap (rat-κ ρ_1 (e_1 e ...) ℓ ι κ) V_f)
+        (ev e_1 ρ_1 ι (ran-κ V_f () ρ_1 (e ...) ℓ ι κ))
         "function with argument(s)"]
 
-   [--> (ap (ran-κ v_f ω_f (v ...) ρ_1 (ω ...) Ω_1 () ℓ ι κ) v_n ω_n)
-        (apply v_f ω_f (v ... v_n) (ω ... ω_n) (ℓ . ι) κ)
+   [--> (ap (ran-κ V_f (V ...) ρ_1 () ℓ ι κ) V_n)
+        (apply V_f (V ... V_n) (ℓ . ι) κ)
         "last argument"]
    
-   [--> (ap (ran-κ v_f ω_f (v ...) ρ_1 (ω ...) Ω_1 (e_i+1 e ...) ℓ ι κ) v_i ω_i)
-        (ev e_i+1 ρ_1 indeterminate Ω_1 ι (ran-κ v_f ω_f (v ... v_i) ρ_1 (ω ... ω_i) Ω_1 (e ...) ℓ ι κ))
+   [--> (ap (ran-κ V_f (V ...) ρ_1 (e_i+1 e ...) ℓ ι κ) V_i)
+        (ev e_i+1 ρ_1 ι (ran-κ V_f (V ... V_i) ρ_1 (e ...) ℓ ι κ))
         "inner argument"]
    
-   [--> (ap (let-κ x ρ_1 Ω_1 e ω_0 ι κ) v ω)
-        (ev e (ρ-extend ρ_1 x v) ω_0 (Ω-extend Ω_1 x ω) ι κ)
+   [--> (ap (let-κ x ρ_1 e ι κ) V)
+        (ev e (ρ-extend ρ_1 x V) ι κ)
         "let bind"]
 
-   [--> (ap (if-κ ω_0 ρ_1 Ω_1 e_c e_a ι κ) v ω)
-        (ev e_c ρ_1 (compose ω_0 (true ω indeterminate)) Ω_1 ι κ)
+   [--> (ap (if-κ ρ_1 e_c e_a ι κ) (v ω))
+        (ev e_c ρ_1 ι (ifω-κ (v ω) κ))
         "if-true"
         (side-condition (not (equal? (term v) #f)))]
    
-   [--> (ap (if-κ ω_0 ρ_1 Ω_1 e_c e_a ι κ) #f ω)
-        (ev e_a ρ_1 (compose ω_0 (fals ω indeterminate)) Ω_1 ι κ)
-        "if-false"]))
+   [--> (ap (if-κ ρ_1 e_c e_a ι κ) (#f ω) )
+        (ev e_a ρ_1 ι (ifω-κ (#f ω) κ))
+        "if-false"]
+   
+   [--> (ap (ifω-κ (v_0 ω_0) κ) (v ω))
+        (ap κ (v (true ω_0 ω)))
+        "if-return-true"
+        (side-condition (not (equal? (term v_0) #f)))]
+   
+   [--> (ap (ifω-κ (#f ω_0) κ) (v ω))
+        (ap κ (v (fals ω_0 ω)))
+        "if-return-false"]
 
-(define -> (make-> (λ (ι) 0.5)))
+   [--> (ap (fω-κ ω_f κ) (v ω))
+        (ap κ (v (lift ω_f ω)))
+        "function return"]))
+
+(provide L inject make->)
+
+(module+ main
+  (define -> (make-> (λ (ι) 0.5)))
+  
+  (apply-reduction-relation* -> (term (inject (flip 0.5 ℓ0))))
+  (apply-reduction-relation* -> (term (inject (if (flip 0.5 ℓ0) 2 3))))
+  (apply-reduction-relation* -> (term (inject (let ([y (λ (x) x)]) 42))))
+  (apply-reduction-relation* -> (term (inject (let ([fact (fix fact (λ (n) (if (= n 0 ℓ0) 1 (* n (fact (- n 1 ℓ1) ℓ2) ℓ3))))])
+                                                (fact 3 ℓ4))))))
 
 
-
-
-(apply-reduction-relation* -> (term (inject (flip 0.5 ℓ0))))
-(apply-reduction-relation* -> (term (inject (if (flip 0.5 ℓ0) 2 3))))
-(apply-reduction-relation* -> (term (inject (let ([y (λ (x) x)])
-                                              42))))
-(apply-reduction-relation* -> (term (inject (let ([fact (fix fact (λ (n) (if (= n 0 ℓ0) 1 (* n (fact (- n 1 ℓ1) ℓ2) ℓ3))))])
-                                              (fact 3 ℓ4)))))
-
-
+#;
 (module+ main
   (require racket/match
            redex)
@@ -230,32 +221,9 @@
   
   (render-reduction-relation -> "direct-concrete.ps")
   
-  #;
+  #;                                    ;
   (with-compound-rewriters (['ev rewriter*]
   ['ap rewriter*])
   (with-unquote-rewriter unquote-rewriter
-    (render-reduction-relation -> "direct-concrete.ps"))))
+  (render-reduction-relation -> "direct-concrete.ps"))))
 
-
-
-
-'(ap (if-κ indeterminate
-          ((n 3)
-           (fact (clos (fix fact (λ (n)
-                                   (if (= n 0 ℓ0)
-                                     1
-                                     (* n (fact (- n 1 ℓ1) ℓ2) ℓ3))))
-                       () ())))
-          ((n (degenerate 3))
-           (fact (degenerate (clos (fix fact (λ (n)
-                                               (if (= n 0 ℓ0)
-                                                 1
-                                                 (* n (fact (- n 1 ℓ1) ℓ2) ℓ3))))
-                                   () ()))))
-          1
-          (* n (fact (- n 1 ℓ1) ℓ2) ℓ3)
-          (ℓ4)
-          halt-κ)
-    #f
-    (deterministic = (degenerate 3) (degenerate 0)))
-'(apply = (degenerate =) (3 0) ((degenerate 3) (degenerate 0)) (ℓ0 ℓ4) (if-κ indeterminate ((n 3) (fact (clos (fix fact (λ (n) (if (= n 0 ℓ0) 1 (* n (fact (- n 1 ℓ1) ℓ2) ℓ3)))) () ()))) ((n (degenerate 3)) (fact (degenerate (clos (fix fact (λ (n) (if (= n 0 ℓ0) 1 (* n (fact (- n 1 ℓ1) ℓ2) ℓ3)))) () ())))) 1 (* n (fact (- n 1 ℓ1) ℓ2) ℓ3) (ℓ4) halt-κ))

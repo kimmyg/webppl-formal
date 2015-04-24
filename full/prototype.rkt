@@ -1,16 +1,8 @@
 #lang racket/base
-(require #;(for-syntax racket/base)
-         racket/match #;(rename-in racket/match [match rkt:match])
-	 racket/set
-	 "parse.rkt")
-
-;; sinks
-
-(struct returned () #:transparent)
-
-(struct argument (ℓ) #:transparent)
-(struct operator argument () #:transparent)
-(struct operand argument (n) #:transparent)
+(require racket/match
+         racket/set
+         "parse.rkt"
+         "relation.rkt")
 
 ;; sources
 
@@ -31,26 +23,13 @@
 ;; both the contribution to the address and the syntactic call from which the result comes
 ;; sources are mapped in the influence environment to parameters and labels
 
-;; sinks are function /arguments/ and returns
-;; a function argument sink has a callsite label and argument position
-;; this is a higher-order language, so the argument position might be operator
-
-#;
-(define-syntax (match stx)
-  (syntax-case stx ()
-    [(_ e clauses ...)
-     (with-syntax ([line (syntax-line stx)])
-       #'(begin
-           (printf "~a ~a\n" '(match e) line)
-           (rkt:match e clauses ...)))]))
-
 ;; the use environment has a map of labels to callsites and argument positions
 ;; the callsites include continuation calls
 ;; this means continuation callsites need labels too, but they won't be used as addresses
 ;; the result is a set of sources which can be parameters or the result of calls
   
 (struct ς-entr (σ f vs) #:transparent)
-(struct ς-exit (σ H v ω) #:transparent)
+(struct ς-exit (σ H v ω) #:transparent) ; need something to distinguish callsites
 (struct ς-call (σ ρ Ω H f es κ ℓ) #:transparent)
 (struct ς-tail (σ ρ Ω H f es ℓ) #:transparent)
 
@@ -107,12 +86,6 @@
 
 (define (inject p)
   (ς-entr empty-σ p null))
-
-(define ((add x) s)
-  (set-add s x))
-
-(define ((union s1) s0)
-  (set-union s0 s1))
 
 (define (refines? v vα)
   (match v
@@ -202,69 +175,59 @@
                 [Ω (Ω-update x (result ℓ1) Ω)])
             (propagate* seen work ς0 (ς-eval σ ρ Ω H e)))))))
   
-  (define (call seen work calls summaries ς0×ς1 ς2s f)
+  (define (call seen work calls summaries ς0 ς1 ς2s f)
     (for/fold ([work work]
 	       [calls calls])
 	([ς2 (in-list ς2s)])
       (values (for/fold ([work (propagate seen work ς2 ς2)])
-                  ([ς3 (in-set (hash-ref summaries ς2))])
-                (f work ς2 ς3))
-              (hash-update calls ς2 (λ (cs) (set-add cs ς0×ς1)) (set)))))
+                  ([ς2×ς3 (in-set (rel-get summaries 0 ς2))])
+                (match-let ([(× _ ς3) ς2×ς3])
+                  (f work ς2 ς3)))
+              (rel-add ς0 ς1 ς2))))
   
   (define (retr seen work calls ς0 f)
     (for/fold ([work work])
-	([ς2×ς3 (in-set (hash-ref calls ς0 (set)))])
-      (match-let ([(cons ς2 ς3) ς2×ς3])
+	([ς2×ς3×ς0 (in-set (rel-get calls 2 ς0))])
+      (match-let ([(× ς2 ς3 _) ς2×ς3×ς0])
 	(f work ς2 ς3))))
   
   (let ([ς-init (inject p)])
     (let loop ([seen (set)]
 	       [work (list (cons ς-init ς-init))]
-	       [calls (hash)]
-	       [tails (hash)]
-	       [summaries (hash)]
-               [results (hash)]
+	       [calls (rel3)]
+	       [tails (rel3)]
+	       [summaries (rel2)]
 	       [finals (set)])
       (match work
 	[(list)
-	 (values ς-init seen calls tails summaries results finals)]
+	 (values ς-init seen calls tails summaries finals)]
 	[(cons (and ς0×ς1 (cons ς0 ς1)) work)
 	 (let ([seen (set-add seen ς0×ς1)])
 	   (cond
 	     [(ς-entr? ς1)
 	      (let ([work (propagate* seen work ς0 (succs ς1))])
-		(loop seen work calls tails summaries results finals))]
+		(loop seen work calls tails summaries finals))]
 	     [(ς-call? ς1)
               (let ([ς2s (succs ς1)])
-                (let-values ([(results) (foldl (λ (ς2 results)
-                                                 (hash-update results ς0
-                                                              (λ (->) (hash-update -> (ς-call-ℓ ς1) (add ς2) (set)))
-                                                              (hasheq)))
-                                               results ς2s)]
-                             [(work calls) (call seen work calls summaries ς0×ς1 ς2s
+                (let-values ([(work calls) (call seen work calls summaries ς0 ς1 ς2s
                                                  (λ (work ς2 ς3) (update seen work ς0 ς1 ς2 ς3)))])
-                  (loop seen work calls tails summaries results finals)))]
+                  (loop seen work calls tails summaries finals)))]
 	     [(ς-tail? ς1)
               (let ([ς2s (succs ς1)])
-                (let-values ([(results) (foldl (λ (ς2 results)
-                                                 (hash-update results ς0
-                                                              (λ (->) (hash-update -> (ς-tail-ℓ ς1) (add ς2) (set)))
-                                                              (hasheq)))
-                                               results ς2s)]
-                             [(work tails) (call seen work tails summaries ς0×ς1 ς2s
+                (let-values ([(work tails) (call seen work tails summaries ς0 ς1 ς2s
                                                  (λ (work ς2 ς3) (propagate seen work ς0 ς3)))])
-		(loop seen work calls tails summaries results finals)))]
+		(loop seen work calls tails summaries finals)))]
 	     [(ς-exit? ς1)
 	      (if (equal? ς0 ς-init)
-                (loop seen work calls tails summaries results (set-add finals ς1))
-		(let ([summaries (hash-update summaries ς0 (add ς1) (set))])
+                (loop seen work calls tails summaries (set-add finals ς1))
+		(let ([summaries (rel-add summaries ς0 ς1)])
 		  (let* ([work (retr seen work calls ς0
 				     (λ (work ς2 ς3) (update seen work ς2 ς3 ς0 ς1)))]
 			 [work (retr seen work tails ς0
 				     (λ (work ς2 ς3)
                                        (match-let ([(ς-exit σ1 H1 v1 ω1) ς1])
                                          (propagate seen work ς2 (ς-exit σ1 H1 v1 (result (ς-tail-ℓ ς3)))))))])
-		    (loop seen work calls tails summaries results finals))))]
+		    (loop seen work calls tails summaries finals))))]
 	     [else
 	      (error 'analyze "unrecognized state ~a" ς1)]))]))))
 
@@ -286,7 +249,7 @@
         (set-add ςs ς0)
         ςs)))
 
-  (define (resolve calls tails summaries results)
+  (define (resolve calls tails summaries)
     (letrec ([inner0 (λ (ς0 s)
                        (match s
                          [(RAND preds)
@@ -294,16 +257,14 @@
              [inner1 (λ (ς0 v)
                        (match v
                            [(parameter n)
-                            (set-union (for/set ([ς2×ς3 (in-set (hash-ref calls ς0 (set)))])
-                                         (match-let ([(cons ς0 (ς-call σ1 ρ1 Ω1 H1 f1 es1 k1 ℓ1)) ς2×ς3])
+                            (set-union (for/set ([ς2×ς3×ς0 (in-set (rel-get calls 2 ς0))])
+                                         (match-let ([(× ς2 (ς-call σ1 ρ1 Ω1 H1 f1 es1 k1 ℓ1) _) ς2×ς3×ς0])
                                            (cons ℓ1 (inner1 ς0 (D (list-ref es1 n) Ω1)))))
-                                       (for/set ([ς2×ς3 (in-set (hash-ref tails ς0 (set)))])
-                                         (match-let ([(cons ς0 (ς-tail σ1 ρ1 Ω1 H1 f1 es1 ℓ1)) ς2×ς3])
+                                       (for/set ([ς2×ς3×ς0 (in-set (rel-get tails 2 ς0))])
+                                         (match-let ([(× ς2 (ς-call σ1 ρ1 Ω1 H1 f1 es1 k1 ℓ1) _) ς2×ς3×ς0])
                                            (cons ℓ1 (inner1 ς0 (D (list-ref es1 n) Ω1))))))]
                            [(result ℓ)
-                            (for*/set ([ς0 (in-set (hash-ref (hash-ref results ς0) ℓ))]
-                                       [ς1 (in-set (hash-ref summaries ς0))])
-                              (cons `(- ,ℓ) (inner1 ς0 (ς-exit-ω ς1))))]
+                            (raise (result ℓ))]
                            [(immediate e)
                             '(DEG)]
                            [(RAND preds)
@@ -311,27 +272,18 @@
       inner0))
 
   (define (run p)
-    (let-values ([(ς-init seen calls tails summaries results finals) (analyze (CPS p))])
-      (let ([resolve (resolve calls tails summaries results)])
+    (let-values ([(ς-init seen calls tails summaries finals) (analyze (CPS p))])
+      (let ([resolve (resolve calls tails summaries)])
+        12
+        #;
         (for*/set ([ς0 (in-set (sample-entries (hash-keys summaries)))]
-                   [ς1 (in-set (hash-ref summaries ς0))])
-          (resolve ς0 (ς-exit-ω ς1))))))
+        [ς1 (in-set (rel-get summaries 0 ς0))])
+        (resolve ς0 (ς-exit-ω ς1))))))
 
   (for ([t (in-set (run p0))])
     ((current-print) t))
 
   (time (analyze (CPS p1)))
-  
-  #;
-  (for ([t (in-set (run p1))])
-  ((current-print) t)))
-
-; join delta addresses
-; propagate blanket of conditional, more elaborate matching
-; stop hardcoding the node resolution
-; get it working with cycles
-; get forward deltas working too
-; formalize precision of forward and backward (can we just reverse the relation that we extract?)
 
 (module+ test
   ; the result depends on a random choice made in the callee
