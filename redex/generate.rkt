@@ -94,7 +94,7 @@
       [(3 4 5) (R)]
       [(6) (generate-arrow-type (generate-type Γ) Γ)]))
 
-  (define (generate-B) (not (zero? (sample (bernoulli-dist)))))
+  (define (generate-B) (zero? (random 2)))
   (define (generate-P) (sample (uniform-dist)))
   (define (generate-R+) (sample (gamma-dist)))
   (define (generate-R) (sample (normal-dist)))
@@ -143,9 +143,9 @@
                          (-> (list (R+) (R+)) (R+)) '(+ *)
                          (-> (list (R+) (R+)) (R)) '(-)
                          (-> (list (P) (P)) (P)) '(*)
-                         (-> (list (R) (R)) (B)) '(< <= > >=)
-                         (-> (list (R+) (R+)) (B)) '(< <= > >=)
-                         (-> (list (P) (P)) (B)) '(< <= > >=)
+                         (-> (list (R) (R)) (B)) '(< <=)
+                         (-> (list (R+) (R+)) (B)) '(< <=)
+                         (-> (list (P) (P)) (B)) '(< <=)
                          (-> (list (P)) (B)) '(flip)
                          (-> (list (R+) (R+)) (P)) '(beta)
                          (-> (list (R) (R+)) (R)) '(gaussian))))

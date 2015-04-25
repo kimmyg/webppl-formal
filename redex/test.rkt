@@ -55,25 +55,18 @@
 (define dir:-> (dir:make-> oracle))
 (define cps:-> (cps:make-> oracle))
 
-(define p1 (term ((fix fact (λ (n) (if (= n 0 ℓ1) 1 (* n (fact (- n 1 ℓ2) ℓ3) ℓ4)))) 5 ℓ0)))
-
-
 (define (test p)
   ((current-print) (apply-reduction-relation* dir:-> (term (dir:inject ,p))))
   ((current-print) (apply-reduction-relation* cps:-> (term (cps:inject ,(cps p))))))
 
-(test (term 5))
-(test (term ((λ (x) x) 42 ℓ0)))
-(test (term (let ([x 42]) (= x 0 ℓ0))))
-(test (term (if (= 0 0 ℓ0) 35 42)))
-(test (term (if (= (let ([x 42]) (+ x 1 ℓ1)) 43 ℓ0) 35 12)))
-(test (term (flip 0.25 ℓ0)))
-#;(cps (term (if (if (flip 0.74 ℓ0) #t #f) #t #f)))
-(test (term (if (if (flip 0.74 ℓ0) #t #f) #t #f)))
-#;(cps (term (if (flip 0.75 ℓ0) (if (flip 0.75 ℓ1) 42 #f) #f)))
-(test (term (if (flip 0.75 ℓ0) (if (flip 0.75 ℓ1) 42 #f) #f)))
-(cps (term (if (= 0 0 ℓ0) (let ([x (if (= 1 1 ℓ1) 42 35)]) (+ x 12 ℓ2)) 12)))
-(test (term (if (= 0 0 ℓ0) (let ([x (if (= 1 1 ℓ1) 42 35)]) (+ x 12 ℓ2)) 12)))
-#;(test (term (if (= 0 0 ℓ0) (let ([x (if (= 1 1 ℓ1) (let ([z (if (= 2 2 ℓ2) 42 #f)]) (if (= 3 3 ℓ3) z 12)) #f)]) x) #f)))
+(define (test2 p)
+  ((current-print) p)
+  ((current-print) (apply-reduction-relation* dir:-> (term (dir:inject ,p)))))
+
+(require "generate.rkt")
+
+(let loop ()
+  (test2 (random-boolean-valued-program))
+  (loop))
 
 

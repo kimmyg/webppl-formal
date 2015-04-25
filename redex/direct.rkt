@@ -76,13 +76,13 @@
   (define-metafunction LM
     apply : V (V ...) ι κ -> ς
     [(apply (prim ω_f) ((n_0 ω_0) (n_1 ω_1)) ι κ)
-     (ap (fω-κ ω_f κ) (,((->meta (term prim)) (term n_0) (term n_1)) (lift ω_f (deterministic prim ω_0 ω_1))))]
+     (ap (fω-κ ω_f κ) (,((->meta (term prim)) (term n_0) (term n_1)) (deterministic prim ω_0 ω_1)))]
     [(apply (flip ω_f) ((v_p ω_p)) ι κ)
-     (ap (fω-κ ω_f κ) (,(backflip (O (term ι)) (term v_p)) (lift ω_f (random flip (ω_p)))))]
-    [(apply (beta ω_f) ((v_α ω_α) (v_β ω_β)) () ι κ)
-     (ap (fω-κ ω_f κ) (,(backbeta (O (term ι)) (term v_α) (term v_β)) (lift ω_f (random beta (ω_α ω_β)))))]
-    [(apply (beta ω_f) ((v_μ ω_μ) (v_σ² ω_σ²)) ι κ)
-     (ap (fω-κ ω_f κ) (,(backgaussian (O (term ι)) (term v_μ) (term v_σ²)) (lift ω_f (random beta (ω_μ ω_σ²)))))]
+     (ap (fω-κ ω_f κ) (,(backflip (O (term ι)) (term v_p)) (random flip (ω_p))))]
+    [(apply (beta ω_f) ((v_α ω_α) (v_β ω_β)) ι κ)
+     (ap (fω-κ ω_f κ) (,(backbeta (O (term ι)) (term v_α) (term v_β)) (random beta (ω_α ω_β))))]
+    [(apply (gaussian ω_f) ((v_μ ω_μ) (v_σ² ω_σ²)) ι κ)
+     (ap (fω-κ ω_f κ) (,(backgaussian (O (term ι)) (term v_μ) (term v_σ²)) (random beta (ω_μ ω_σ²))))]
     [(apply ((clos (λ (x ..._0) e) ρ) ω_f) (V ..._0) ι κ)
      (ev e (ρ-extend* ρ (x ...) (V ...)) ι (fω-κ ω_f κ))]
     [(apply ((clos (fix x_f (λ (x ..._0) e)) ρ) ω_f) (V ..._0) ι κ)
