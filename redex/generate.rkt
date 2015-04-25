@@ -21,9 +21,7 @@
 ;; Γ |- true | false : B
 ;; Γ |- <real> : R
 ;; Γ |- <real> >= 0 : R+
-;; Γ |- r : R+ ==> Γ |- r : R
 ;; Γ |- 0 <= <real> <= 1 : P
-;; Γ |- p : P ==> Γ |- p : R+
 ;; x : S :: Γ |- e : T ==> Γ |- λx.e : S -> T for all types S and T
 ;; (and naturally extended to multi-argument functions)
 ;; Γ |- flip : P -> B
@@ -52,21 +50,6 @@
 (define (geometric p)
   (if (< (random) p) 0 (add1 (geometric p))))
 
-(define <:
-  (match-lambda**
-   [((B) (B)) #t]
-   [((R) (R)) #t]
-   [((R+) (R+)) #t]
-   [((P) (P)) #t]
-   #;[((R+) (R)) #t]
-   #;[((P) (R+)) #t]
-   #;[((P) (R)) #t]
-   [((-> Ds0 R0) (-> Ds1 R1))
-    (and (= (length Ds0) (length Ds1))
-         (andmap <: Ds1 Ds0)
-         (<: R0 R1))]
-   [(_ _) #f]))
-
 (define (Γ-update x T Γ)
   (hash-update Γ T (λ (xs) (cons x xs)) null))
 
@@ -77,7 +60,7 @@
   (for/fold ([t #f]
              [i 1])
       ([(T ts) (in-hash Γ)])
-    (if (<: T T0)
+    (if (equal? T T0)
       (for/fold ([t0 t]
                  [i i])
           ([t (in-list ts)])
@@ -95,7 +78,7 @@
     (let* ([Ts (for/fold ([Ts null])
                    ([(T ts) (in-hash Γ)])
                  (match T
-                   [(-> _ (? (λ (T) (<: T T0))))
+                   [(-> _ (== T0))
                     (for/fold ([Ts Ts])
                         ([t (in-list ts)])
                       (cons T Ts))]
@@ -136,8 +119,7 @@
   
   (define (generate-term T Γ)
     (let-values ([(t n) (Γ-lookup Γ T)])
-      (if (and t #;(not (zero? (random n)))
-               )
+      (if (and t (not (zero? (random n))))
         t
         (case (random 8)
           [(1) (generate-application T Γ)]
@@ -156,9 +138,23 @@
                     [(0) (generate-P)]
                     [(1) `(beta ,(generate-term (R+) Γ) ,(generate-term (R+) Γ) ,(fresh-lab))])]
              [(-> Ds R) (generate--> Ds R Γ)])]))))
-
+  
   (generate-term T (hash (-> (list (R) (R)) (R)) '(+ - *)
+                         (-> (list (R+) (R+)) (R+)) '(+ *)
+                         (-> (list (R+) (R+)) (R)) '(-)
+                         (-> (list (P) (P)) (P)) '(*)
                          (-> (list (R) (R)) (B)) '(< <= > >=)
-                         (-> (list (P)) (B)) '(flip flip flip)
-                         (-> (list (R+) (R+)) (P)) '(beta beta beta)
-                         (-> (list (R) (R+)) (R)) '(gaussian gaussian gaussian))))
+                         (-> (list (R+) (R+)) (B)) '(< <= > >=)
+                         (-> (list (P) (P)) (B)) '(< <= > >=)
+                         (-> (list (P)) (B)) '(flip)
+                         (-> (list (R+) (R+)) (P)) '(beta)
+                         (-> (list (R) (R+)) (R)) '(gaussian))))
+
+(define (random-boolean-valued-program)
+  (generate-program (B)))
+
+(define (random-real-valued-program)
+  (generate-program (R)))
+
+(provide random-boolean-valued-program
+         random-real-valued-program)
