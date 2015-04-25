@@ -8,7 +8,7 @@
 (define (->meta f)
   (case f
     [(+) +] [(-) -] [(*) *] [(/) /]
-    [(=) =]
+    [(=) =] [(<) <] [(<=) <=]
     [else (error '->meta "not defined for ~a" f)]))
 
 (provide (all-defined-out))
